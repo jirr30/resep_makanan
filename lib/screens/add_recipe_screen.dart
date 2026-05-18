@@ -1,4 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../models/recipe.dart';
 import '../services/database_service.dart';
 import '../utils/app_theme.dart';
@@ -13,36 +17,46 @@ class AddRecipeScreen extends StatefulWidget {
 
 class _AddRecipeScreenState extends State<AddRecipeScreen> {
   final _formKey = GlobalKey<FormState>();
-  final DatabaseService _db = DatabaseService();
+  final _db = DatabaseService();
 
-  final _titleCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _imageCtrl = TextEditingController();
-  final _timeCtrl = TextEditingController();
+  final _titleCtrl    = TextEditingController();
+  final _descCtrl     = TextEditingController();
+  final _imageCtrl    = TextEditingController();
+  final _timeCtrl     = TextEditingController();
   final _servingsCtrl = TextEditingController();
+  final _calCtrl      = TextEditingController();
+  final _proteinCtrl  = TextEditingController();
+  final _carbsCtrl    = TextEditingController();
+  final _fatCtrl      = TextEditingController();
 
-  String _category = AppConstants.categories[1];
+  String _category   = AppConstants.categories[1];
   String _difficulty = AppConstants.difficulties[0];
   final List<TextEditingController> _ingredientCtrls = [TextEditingController()];
-  final List<TextEditingController> _stepCtrls = [TextEditingController()];
+  final List<TextEditingController> _stepCtrls       = [TextEditingController()];
+  String? _localImagePath;
   bool _saving = false;
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
-    _descCtrl.dispose();
-    _imageCtrl.dispose();
-    _timeCtrl.dispose();
-    _servingsCtrl.dispose();
+    for (final c in [_titleCtrl, _descCtrl, _imageCtrl, _timeCtrl, _servingsCtrl,
+      _calCtrl, _proteinCtrl, _carbsCtrl, _fatCtrl]) { c.dispose(); }
     for (final c in _ingredientCtrls) { c.dispose(); }
     for (final c in _stepCtrls) { c.dispose(); }
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (picked == null) return;
+    final dir = await getApplicationDocumentsDirectory();
+    final name = 'recipe_${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}';
+    final saved = await File(picked.path).copy('${dir.path}/$name');
+    setState(() => _localImagePath = saved.path);
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
-
     final recipe = Recipe(
       title: _titleCtrl.text.trim(),
       category: _category,
@@ -50,13 +64,17 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
       imageUrl: _imageCtrl.text.trim().isEmpty
           ? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'
           : _imageCtrl.text.trim(),
+      imagePath: _localImagePath,
       ingredients: _ingredientCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
       steps: _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
       cookingTime: int.tryParse(_timeCtrl.text) ?? 30,
       servings: int.tryParse(_servingsCtrl.text) ?? 2,
       difficulty: _difficulty,
+      calories: int.tryParse(_calCtrl.text) ?? 0,
+      protein: double.tryParse(_proteinCtrl.text) ?? 0,
+      carbs: double.tryParse(_carbsCtrl.text) ?? 0,
+      fat: double.tryParse(_fatCtrl.text) ?? 0,
     );
-
     await _db.insertRecipe(recipe);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -75,6 +93,9 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            _section('Foto Resep'),
+            _buildImagePicker(),
+            const SizedBox(height: 20),
             _section('Informasi Dasar'),
             TextFormField(
               controller: _titleCtrl,
@@ -89,11 +110,6 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               validator: (v) => v?.trim().isEmpty == true ? 'Deskripsi wajib diisi' : null,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _imageCtrl,
-              decoration: const InputDecoration(labelText: 'URL Gambar (opsional)', prefixIcon: Icon(Icons.image)),
-            ),
-            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _category,
               decoration: const InputDecoration(labelText: 'Kategori', prefixIcon: Icon(Icons.category)),
@@ -101,27 +117,21 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               onChanged: (v) => setState(() => _category = v!),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _timeCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Waktu (menit) *', prefixIcon: Icon(Icons.timer)),
-                    validator: (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _servingsCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Porsi *', prefixIcon: Icon(Icons.people)),
-                    validator: (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null,
-                  ),
-                ),
-              ],
-            ),
+            Row(children: [
+              Expanded(child: TextFormField(
+                controller: _timeCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Waktu (menit) *', prefixIcon: Icon(Icons.timer)),
+                validator: (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null,
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: TextFormField(
+                controller: _servingsCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Porsi *', prefixIcon: Icon(Icons.people)),
+                validator: (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null,
+              )),
+            ]),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _difficulty,
@@ -130,30 +140,48 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               onChanged: (v) => setState(() => _difficulty = v!),
             ),
             const SizedBox(height: 20),
+            _section('Informasi Nutrisi (per porsi, opsional)'),
+            Row(children: [
+              Expanded(child: TextFormField(
+                controller: _calCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Kalori (kkal)', prefixIcon: Icon(Icons.local_fire_department)),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: TextFormField(
+                controller: _proteinCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Protein (g)', prefixIcon: Icon(Icons.egg)),
+              )),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: TextFormField(
+                controller: _carbsCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Karbo (g)', prefixIcon: Icon(Icons.grain)),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: TextFormField(
+                controller: _fatCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Lemak (g)', prefixIcon: Icon(Icons.opacity)),
+              )),
+            ]),
+            const SizedBox(height: 20),
             _section('Bahan-bahan'),
             ..._ingredientCtrls.asMap().entries.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: e.value,
-                      decoration: InputDecoration(
-                        labelText: 'Bahan ${e.key + 1}',
-                        prefixIcon: const Icon(Icons.fiber_manual_record, size: 12, color: AppTheme.primary),
-                      ),
-                    ),
+              child: Row(children: [
+                Expanded(child: TextFormField(
+                  controller: e.value,
+                  decoration: InputDecoration(
+                    labelText: 'Bahan ${e.key + 1}',
+                    prefixIcon: const Icon(Icons.fiber_manual_record, size: 12, color: AppTheme.primary),
                   ),
-                  if (_ingredientCtrls.length > 1)
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                      onPressed: () => setState(() {
-                        _ingredientCtrls[e.key].dispose();
-                        _ingredientCtrls.removeAt(e.key);
-                      }),
-                    ),
-                ],
-              ),
+                )),
+                if (_ingredientCtrls.length > 1)
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                    onPressed: () => setState(() { _ingredientCtrls[e.key].dispose(); _ingredientCtrls.removeAt(e.key); }),
+                  ),
+              ]),
             )),
             TextButton.icon(
               onPressed: () => setState(() => _ingredientCtrls.add(TextEditingController())),
@@ -164,34 +192,22 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
             _section('Langkah-langkah'),
             ..._stepCtrls.asMap().entries.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16, right: 8),
-                    child: CircleAvatar(
-                      radius: 14,
-                      backgroundColor: AppTheme.primary,
-                      child: Text('${e.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12)),
-                    ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 16, right: 8),
+                  child: CircleAvatar(radius: 14, backgroundColor: AppTheme.primary,
+                    child: Text('${e.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12))),
+                ),
+                Expanded(child: TextFormField(
+                  controller: e.value, maxLines: 2,
+                  decoration: InputDecoration(labelText: 'Langkah ${e.key + 1}'),
+                )),
+                if (_stepCtrls.length > 1)
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                    onPressed: () => setState(() { _stepCtrls[e.key].dispose(); _stepCtrls.removeAt(e.key); }),
                   ),
-                  Expanded(
-                    child: TextFormField(
-                      controller: e.value,
-                      maxLines: 2,
-                      decoration: InputDecoration(labelText: 'Langkah ${e.key + 1}'),
-                    ),
-                  ),
-                  if (_stepCtrls.length > 1)
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                      onPressed: () => setState(() {
-                        _stepCtrls[e.key].dispose();
-                        _stepCtrls.removeAt(e.key);
-                      }),
-                    ),
-                ],
-              ),
+              ]),
             )),
             TextButton.icon(
               onPressed: () => setState(() => _stepCtrls.add(TextEditingController())),
@@ -213,10 +229,37 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
     );
   }
 
-  Widget _section(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+  Widget _buildImagePicker() {
+    final hasLocal = _localImagePath != null;
+    return GestureDetector(
+      onTap: _pickImage,
+      child: Container(
+        height: 160,
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+        ),
+        child: hasLocal
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(fit: StackFit.expand, children: [
+                  Image.file(File(_localImagePath!), fit: BoxFit.cover),
+                  Container(color: Colors.black26, alignment: Alignment.center,
+                    child: const Icon(Icons.edit, color: Colors.white, size: 32)),
+                ]),
+              )
+            : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
+                const SizedBox(height: 8),
+                const Text('Pilih foto dari galeri (opsional)', style: TextStyle(color: AppTheme.textSecondary)),
+              ]),
+      ),
     );
   }
+
+  Widget _section(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+  );
 }

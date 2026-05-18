@@ -1,12 +1,16 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/recipe.dart';
 import '../services/database_service.dart';
+import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
+import 'edit_recipe_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final Recipe recipe;
-
   const DetailScreen({super.key, required this.recipe});
 
   @override
@@ -16,13 +20,14 @@ class DetailScreen extends StatefulWidget {
 class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late Recipe _recipe;
-  final DatabaseService _db = DatabaseService();
+  final _db = DatabaseService();
+  final _notif = NotificationService();
 
   @override
   void initState() {
     super.initState();
     _recipe = widget.recipe;
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -34,6 +39,16 @@ class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderSt
   Future<void> _toggleFavorite() async {
     await _db.toggleFavorite(_recipe.id!, !_recipe.isFavorite);
     setState(() => _recipe = _recipe.copyWith(isFavorite: !_recipe.isFavorite));
+  }
+
+  Future<void> _rateRecipe(double rating) async {
+    await _db.updateUserRating(_recipe.id!, rating);
+    setState(() => _recipe = _recipe.copyWith(userRating: rating));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Rating $rating bintang disimpan!'), backgroundColor: AppTheme.primary),
+      );
+    }
   }
 
   void _shareRecipe() {
@@ -53,8 +68,48 @@ Dibagikan dari aplikasi ResepKu
     Share.share(text, subject: 'Resep ${_recipe.title}');
   }
 
+  void _openTimer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _TimerSheet(recipe: _recipe, notif: _notif),
+    );
+  }
+
+  Future<void> _openEdit() async {
+    final updated = await Navigator.push<Recipe>(
+      context,
+      MaterialPageRoute(builder: (_) => EditRecipeScreen(recipe: _recipe)),
+    );
+    if (updated != null) setState(() => _recipe = updated);
+  }
+
+  Future<void> _deleteRecipe() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hapus Resep?'),
+        content: Text('Resep "${_recipe.title}" akan dihapus permanen.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.deleteRecipe(_recipe.id!);
+      if (mounted) Navigator.pop(context, 'deleted');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hasLocalImage = _recipe.imagePath != null && File(_recipe.imagePath!).existsSync();
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -63,21 +118,30 @@ Dibagikan dari aplikasi ResepKu
             pinned: true,
             backgroundColor: AppTheme.primary,
             actions: [
+              IconButton(icon: const Icon(Icons.edit), onPressed: _openEdit),
               IconButton(
                 icon: Icon(_recipe.isFavorite ? Icons.favorite : Icons.favorite_border),
                 onPressed: _toggleFavorite,
               ),
               IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe),
+              PopupMenuButton<String>(
+                onSelected: (v) { if (v == 'delete') _deleteRecipe(); },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'delete', child: Row(children: [
+                    Icon(Icons.delete, color: Colors.red, size: 18),
+                    SizedBox(width: 8),
+                    Text('Hapus Resep', style: TextStyle(color: Colors.red)),
+                  ])),
+                ],
+              ),
             ],
             flexibleSpace: FlexibleSpaceBar(
-              background: Image.network(
-                _recipe.imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: AppTheme.primary.withValues(alpha: 0.3),
-                  child: const Icon(Icons.restaurant, size: 80, color: Colors.white),
-                ),
-              ),
+              background: hasLocalImage
+                  ? Image.file(File(_recipe.imagePath!), fit: BoxFit.cover)
+                  : _recipe.imageUrl.isNotEmpty
+                      ? Image.network(_recipe.imageUrl, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _imagePlaceholder())
+                      : _imagePlaceholder(),
             ),
           ),
           SliverToBoxAdapter(
@@ -89,36 +153,50 @@ Dibagikan dari aplikasi ResepKu
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(_recipe.category, style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                      Row(children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          const Spacer(),
-                          const Icon(Icons.star, color: Colors.amber, size: 18),
-                          const SizedBox(width: 4),
-                          Text(_recipe.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        ],
-                      ),
+                          child: Text(_recipe.category, style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.star, color: Colors.amber, size: 18),
+                        const SizedBox(width: 4),
+                        Text(_recipe.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ]),
                       const SizedBox(height: 10),
                       Text(_recipe.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                       const SizedBox(height: 8),
                       Text(_recipe.description, style: const TextStyle(fontSize: 15, color: AppTheme.textSecondary, height: 1.5)),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: 'menit'),
-                          const SizedBox(width: 12),
-                          _StatCard(icon: Icons.people, value: '${_recipe.servings}', unit: 'porsi'),
-                          const SizedBox(width: 12),
-                          _StatCard(icon: Icons.bar_chart, value: _recipe.difficulty, unit: 'tingkat'),
-                        ],
+                      Row(children: [
+                        _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: 'menit'),
+                        const SizedBox(width: 12),
+                        _StatCard(icon: Icons.people, value: '${_recipe.servings}', unit: 'porsi'),
+                        const SizedBox(width: 12),
+                        _StatCard(icon: Icons.bar_chart, value: _recipe.difficulty, unit: 'tingkat'),
+                      ]),
+                      const SizedBox(height: 16),
+                      // Timer button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _openTimer,
+                          icon: const Icon(Icons.timer, color: AppTheme.primary),
+                          label: Text('Mulai Timer ${_recipe.cookingTime} Menit', style: const TextStyle(color: AppTheme.primary)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppTheme.primary),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
                       ),
+                      const SizedBox(height: 16),
+                      // Rating pengguna
+                      _buildRatingSection(),
                     ],
                   ),
                 ),
@@ -128,23 +206,53 @@ Dibagikan dari aplikasi ResepKu
                   unselectedLabelColor: AppTheme.textSecondary,
                   indicatorColor: AppTheme.primary,
                   tabs: const [
-                    Tab(text: 'Bahan-bahan'),
-                    Tab(text: 'Cara Memasak'),
+                    Tab(text: 'Bahan'),
+                    Tab(text: 'Cara Masak'),
+                    Tab(text: 'Nutrisi'),
                   ],
                 ),
                 SizedBox(
-                  height: 400,
+                  height: 420,
                   child: TabBarView(
                     controller: _tabController,
-                    children: [
-                      _buildIngredients(),
-                      _buildSteps(),
-                    ],
+                    children: [_buildIngredients(), _buildSteps(), _buildNutrition()],
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Beri Rating Kamu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 8),
+          Row(children: [
+            RatingBar.builder(
+              initialRating: _recipe.userRating,
+              minRating: 1,
+              itemSize: 32,
+              itemBuilder: (_, __) => const Icon(Icons.star, color: Colors.amber),
+              onRatingUpdate: _rateRecipe,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _recipe.userRating == 0 ? 'Belum dirating' : '${_recipe.userRating.toStringAsFixed(1)} / 5.0',
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+          ]),
         ],
       ),
     );
@@ -156,17 +264,11 @@ Dibagikan dari aplikasi ResepKu
       itemCount: _recipe.ingredients.length,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(_recipe.ingredients[i], style: const TextStyle(fontSize: 15))),
-          ],
-        ),
+        child: Row(children: [
+          Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(_recipe.ingredients[i], style: const TextStyle(fontSize: 15))),
+        ]),
       ),
     );
   }
@@ -177,35 +279,214 @@ Dibagikan dari aplikasi ResepKu
       itemCount: _recipe.steps.length,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.only(bottom: 16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
-              alignment: Alignment.center,
-              child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(_recipe.steps[i], style: const TextStyle(fontSize: 15, height: 1.5)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 32, height: 32,
+            decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(_recipe.steps[i], style: const TextStyle(fontSize: 15, height: 1.5)),
+          )),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildNutrition() {
+    final hasData = _recipe.calories > 0 || _recipe.protein > 0 || _recipe.carbs > 0 || _recipe.fat > 0;
+    if (!hasData) {
+      return Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.no_food, size: 60, color: AppTheme.textSecondary),
+          const SizedBox(height: 12),
+          const Text('Informasi nutrisi belum tersedia', style: TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 8),
+          TextButton(onPressed: _openEdit, child: const Text('Tambah di Edit Resep', style: TextStyle(color: AppTheme.primary))),
+        ]),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Per porsi', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          const SizedBox(height: 16),
+          _NutritionRow(label: 'Kalori', value: '${_recipe.calories} kkal', icon: Icons.local_fire_department, color: Colors.orange),
+          _NutritionRow(label: 'Protein', value: '${_recipe.protein.toStringAsFixed(1)} g', icon: Icons.egg, color: Colors.blue),
+          _NutritionRow(label: 'Karbohidrat', value: '${_recipe.carbs.toStringAsFixed(1)} g', icon: Icons.grain, color: Colors.green),
+          _NutritionRow(label: 'Lemak', value: '${_recipe.fat.toStringAsFixed(1)} g', icon: Icons.opacity, color: Colors.red),
+          const SizedBox(height: 20),
+          if (_recipe.calories > 0) _buildMacroBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMacroBar() {
+    final total = (_recipe.protein * 4) + (_recipe.carbs * 4) + (_recipe.fat * 9);
+    if (total == 0) return const SizedBox();
+    final pProt = (_recipe.protein * 4) / total;
+    final pCarb = (_recipe.carbs * 4) / total;
+    final pFat  = (_recipe.fat * 9) / total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Distribusi Makronutrisi', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Row(children: [
+            Flexible(flex: (pProt * 100).round(), child: Container(height: 20, color: Colors.blue)),
+            Flexible(flex: (pCarb * 100).round(), child: Container(height: 20, color: Colors.green)),
+            Flexible(flex: (pFat * 100).round(), child: Container(height: 20, color: Colors.red)),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          _MacroLegend(color: Colors.blue, label: 'Protein ${(pProt * 100).round()}%'),
+          const SizedBox(width: 16),
+          _MacroLegend(color: Colors.green, label: 'Karbo ${(pCarb * 100).round()}%'),
+          const SizedBox(width: 16),
+          _MacroLegend(color: Colors.red, label: 'Lemak ${(pFat * 100).round()}%'),
+        ]),
+      ],
+    );
+  }
+
+  Widget _imagePlaceholder() => Container(
+    color: AppTheme.primary.withValues(alpha: 0.3),
+    child: const Icon(Icons.restaurant, size: 80, color: Colors.white),
+  );
+}
+
+// ── Timer Bottom Sheet ───────────────────────────────────────────────────────
+
+class _TimerSheet extends StatefulWidget {
+  final Recipe recipe;
+  final NotificationService notif;
+  const _TimerSheet({required this.recipe, required this.notif});
+
+  @override
+  State<_TimerSheet> createState() => _TimerSheetState();
+}
+
+class _TimerSheetState extends State<_TimerSheet> {
+  late int _totalSeconds;
+  late int _remaining;
+  Timer? _timer;
+  bool _running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _totalSeconds = widget.recipe.cookingTime * 60;
+    _remaining = _totalSeconds;
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startPause() {
+    if (_running) {
+      _timer?.cancel();
+      setState(() => _running = false);
+    } else {
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_remaining <= 0) {
+          _timer?.cancel();
+          setState(() => _running = false);
+          widget.notif.showTimerDone(widget.recipe.title);
+        } else {
+          setState(() => _remaining--);
+        }
+      });
+      setState(() => _running = true);
+    }
+  }
+
+  void _reset() {
+    _timer?.cancel();
+    setState(() { _remaining = _totalSeconds; _running = false; });
+  }
+
+  String _format(int secs) {
+    final m = secs ~/ 60;
+    final s = secs % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _totalSeconds > 0 ? _remaining / _totalSeconds : 0.0;
+    final isDone = _remaining == 0;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Text('Timer: ${widget.recipe.title}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17), textAlign: TextAlign.center),
+          const SizedBox(height: 24),
+          Stack(alignment: Alignment.center, children: [
+            SizedBox(
+              width: 180, height: 180,
+              child: CircularProgressIndicator(
+                value: progress,
+                strokeWidth: 10,
+                backgroundColor: Colors.grey[200],
+                color: isDone ? Colors.green : AppTheme.primary,
               ),
             ),
-          ],
-        ),
+            Column(children: [
+              Text(_format(_remaining), style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+              Text(isDone ? 'Selesai!' : (_running ? 'Sedang berjalan' : 'Dijeda'), style: TextStyle(color: isDone ? Colors.green : AppTheme.textSecondary)),
+            ]),
+          ]),
+          const SizedBox(height: 32),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            IconButton(
+              onPressed: _reset,
+              icon: const Icon(Icons.refresh, size: 32),
+              color: AppTheme.textSecondary,
+            ),
+            const SizedBox(width: 24),
+            ElevatedButton.icon(
+              onPressed: isDone ? null : _startPause,
+              icon: Icon(_running ? Icons.pause : Icons.play_arrow),
+              label: Text(_running ? 'Jeda' : 'Mulai'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                textStyle: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
 }
 
+// ── Helper widgets ───────────────────────────────────────────────────────────
+
 class _StatCard extends StatelessWidget {
   final IconData icon;
   final String value;
   final String unit;
-
   const _StatCard({required this.icon, required this.value, required this.unit});
 
   @override
@@ -213,19 +494,55 @@ class _StatCard extends StatelessWidget {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppTheme.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: AppTheme.primary, size: 22),
-            const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary)),
-            Text(unit, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-          ],
-        ),
+        decoration: BoxDecoration(color: AppTheme.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          Icon(icon, color: AppTheme.primary, size: 22),
+          const SizedBox(height: 4),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary)),
+          Text(unit, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+        ]),
       ),
     );
+  }
+}
+
+class _NutritionRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _NutritionRow({required this.label, required this.value, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(width: 16),
+        Text(label, style: const TextStyle(fontSize: 15)),
+        const Spacer(),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      ]),
+    );
+  }
+}
+
+class _MacroLegend extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _MacroLegend({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+      const SizedBox(width: 4),
+      Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+    ]);
   }
 }
