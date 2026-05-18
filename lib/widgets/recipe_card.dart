@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/recipe.dart';
 import '../utils/app_theme.dart';
@@ -28,25 +29,7 @@ class RecipeCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: Image.network(
-                    recipe.imageUrl,
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 180,
-                      color: AppTheme.primary.withValues(alpha: 0.2),
-                      child: const Icon(Icons.restaurant, size: 60, color: AppTheme.primary),
-                  ),
-                    loadingBuilder: (_, child, progress) {
-                      if (progress == null) return child;
-                      return Container(
-                        height: 180,
-                        color: Colors.grey[200],
-                        child: const Center(child: CircularProgressIndicator()),
-                      );
-                    },
-                  ),
+                  child: _buildImage(recipe),
                 ),
                 Positioned(
                   top: 8,
@@ -132,6 +115,47 @@ class RecipeCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _buildImage(Recipe recipe) {
+  const placeholder = SizedBox(
+    height: 180,
+    width: double.infinity,
+    child: ColoredBox(
+      color: Color(0xFFE8F5E9),
+      child: Icon(Icons.restaurant, size: 60, color: AppTheme.primary),
+    ),
+  );
+
+  if (recipe.imagePath != null && File(recipe.imagePath!).existsSync()) {
+    return Image.file(
+      File(recipe.imagePath!),
+      height: 180,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => placeholder,
+    );
+  }
+  if (recipe.imageUrl.isNotEmpty) {
+    return Image.network(
+      recipe.imageUrl,
+      height: 180,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => placeholder,
+      loadingBuilder: (_, child, progress) {
+        if (progress == null) return child;
+        return SizedBox(
+          height: 180,
+          child: ColoredBox(
+            color: Colors.grey.shade200,
+            child: const Center(child: CircularProgressIndicator()),
+          ),
+        );
+      },
+    );
+  }
+  return placeholder;
 }
 
 class _InfoChip extends StatelessWidget {

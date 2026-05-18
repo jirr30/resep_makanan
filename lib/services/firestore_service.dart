@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/recipe.dart';
 
 class FirestoreService {
@@ -7,14 +9,29 @@ class FirestoreService {
 
   CollectionReference get _recipes => _db.collection('community_recipes');
 
+  Future<String> _uploadLocalImage(String localPath, String uid) async {
+    final file = File(localPath);
+    final ext = localPath.split('.').last;
+    final ref = FirebaseStorage.instance
+        .ref('community_images/$uid/${DateTime.now().millisecondsSinceEpoch}.$ext');
+    final task = await ref.putFile(file);
+    return await task.ref.getDownloadURL();
+  }
+
   Future<void> publishRecipe(Recipe recipe) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    String imageUrl = recipe.imageUrl;
+    if (recipe.imagePath != null && File(recipe.imagePath!).existsSync()) {
+      imageUrl = await _uploadLocalImage(recipe.imagePath!, user.uid);
+    }
+
     await _recipes.add({
       'title': recipe.title,
       'category': recipe.category,
       'description': recipe.description,
-      'imageUrl': recipe.imageUrl,
+      'imageUrl': imageUrl,
       'ingredients': recipe.ingredients,
       'steps': recipe.steps,
       'cookingTime': recipe.cookingTime,
