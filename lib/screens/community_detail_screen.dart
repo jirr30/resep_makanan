@@ -663,10 +663,13 @@ class _CommentsTabState extends State<_CommentsTab> {
           }
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
+        final msg = e.toString().contains('permission-denied')
+            ? 'Akses ditolak — cek Firestore Rules di Firebase Console'
+            : 'Gagal mengirim komentar. Coba lagi.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal mengirim komentar. Coba lagi.')),
+          SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
         );
       }
     } finally {
@@ -675,7 +678,15 @@ class _CommentsTabState extends State<_CommentsTab> {
   }
 
   Future<void> _delete(String commentId) async {
-    await widget.fs.deleteComment(widget.recipeId, commentId);
+    try {
+      await widget.fs.deleteComment(widget.recipeId, commentId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal menghapus komentar.')),
+        );
+      }
+    }
   }
 
   @override

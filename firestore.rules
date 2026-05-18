@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /community_recipes/{recipeId} {
+      // Siapa saja bisa baca (termasuk yang belum login)
+      allow read: if true;
+
+      // Hanya user login yang bisa publish resep
+      allow create: if request.auth != null;
+
+      // Update hanya untuk field non-sensitif (likes, rating, commentCount)
+      allow update: if request.auth != null;
+
+      // Hapus hanya oleh pemilik resep
+      allow delete: if request.auth != null
+        && resource.data.authorId == request.auth.uid;
+
+      // ── Subcollection: komentar ──────────────────────────────────────
+      match /comments/{commentId} {
+        allow read: if true;
+
+        // Buat komentar — userId di data harus cocok dengan user yang login
+        allow create: if request.auth != null
+          && request.resource.data.userId == request.auth.uid;
+
+        // Hapus komentar — hanya pemilik komentar
+        allow delete: if request.auth != null
+          && resource.data.userId == request.auth.uid;
+
+        allow update: if false;
+      }
+
+      // ── Subcollection: likes ─────────────────────────────────────────
+      match /likes/{userId} {
+        allow read: if true;
+        // User hanya bisa tulis/hapus like miliknya sendiri
+        allow write: if request.auth != null
+          && request.auth.uid == userId;
+      }
+
+      // ── Subcollection: ratings ───────────────────────────────────────
+      match /ratings/{userId} {
+        allow read: if true;
+        // User hanya bisa tulis rating miliknya sendiri
+        allow write: if request.auth != null
+          && request.auth.uid == userId;
+      }
+    }
+  }
+}
