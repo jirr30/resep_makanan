@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/recipe.dart';
 import '../services/database_service.dart';
+import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 
@@ -35,6 +37,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
   final List<TextEditingController> _stepCtrls       = [TextEditingController()];
   String? _localImagePath;
   bool _saving = false;
+  bool _shareToCommunity = false;
 
   @override
   void dispose() {
@@ -76,9 +79,15 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
       fat: double.tryParse(_fatCtrl.text) ?? 0,
     );
     await _db.insertRecipe(recipe);
+    if (_shareToCommunity && FirebaseAuth.instance.currentUser != null) {
+      await FirestoreService().publishRecipe(recipe);
+    }
     if (mounted) {
+      final msg = _shareToCommunity
+          ? 'Resep disimpan & dibagikan ke komunitas!'
+          : 'Resep berhasil disimpan!';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Resep berhasil disimpan!'), backgroundColor: AppTheme.primary),
+        SnackBar(content: Text(msg), backgroundColor: AppTheme.primary),
       );
       Navigator.pop(context);
     }
@@ -215,12 +224,35 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               label: const Text('Tambah Langkah', style: TextStyle(color: AppTheme.primary)),
             ),
             const SizedBox(height: 24),
+            if (FirebaseAuth.instance.currentUser != null)
+              Card(
+                color: AppTheme.primary.withValues(alpha: 0.06),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                ),
+                child: CheckboxListTile(
+                  value: _shareToCommunity,
+                  onChanged: (v) => setState(() => _shareToCommunity = v ?? false),
+                  activeColor: AppTheme.primary,
+                  title: const Text('Bagikan ke Komunitas', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Resep kamu bisa dilihat pengguna lain', style: TextStyle(fontSize: 12)),
+                  secondary: const Icon(Icons.people, color: AppTheme.primary),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
               child: _saving
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Simpan Resep', style: TextStyle(fontSize: 16)),
+                  : Text(
+                      _shareToCommunity ? 'Simpan & Bagikan' : 'Simpan Resep',
+                      style: const TextStyle(fontSize: 16),
+                    ),
             ),
             const SizedBox(height: 40),
           ],

@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
-import 'detail_screen.dart';
+import 'community_detail_screen.dart';
 import 'login_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
@@ -223,7 +223,7 @@ class _CommunityCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => DetailScreen(recipe: recipe.toRecipe()),
+          builder: (_) => CommunityDetailScreen(recipe: recipe),
         )),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           ClipRRect(
