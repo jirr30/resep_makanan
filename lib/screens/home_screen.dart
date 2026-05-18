@@ -40,6 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _maxTime = 999;
   bool _loading = true;
   bool _hasError = false;
+  int _favCount = 0;
+  int _bottomNavIndex = 0;
 
   @override
   void initState() {
@@ -50,14 +52,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _hasError = false; });
     try {
-      final cats = await _db.getCustomCategories();
+      final cats    = await _db.getCustomCategories();
       final recipes = _selectedCategory == 'Semua'
           ? await _db.getAllRecipes()
           : await _db.getByCategory(_selectedCategory);
+      final all     = await _db.getAllRecipes();
       if (mounted) {
         setState(() {
           _customCategories = cats;
           _all = recipes;
+          _favCount = all.where((r) => r.isFavorite).length;
           _applyFilters();
           _loading = false;
         });
@@ -76,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
       list = list.where((r) => r.cookingTime <= _maxTime).toList();
     }
     switch (_sort) {
-      case SortOption.newest:   break;
+      case SortOption.newest:     break;
       case SortOption.ratingDesc: list.sort((a, b) => b.rating.compareTo(a.rating));
       case SortOption.timeAsc:    list.sort((a, b) => a.cookingTime.compareTo(b.cookingTime));
       case SortOption.nameAsc:    list.sort((a, b) => a.title.compareTo(b.title));
@@ -98,10 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
       action: SnackBarAction(
         label: 'Batalkan',
         textColor: Colors.amber,
-        onPressed: () async {
-          await _db.insertRecipe(recipe);
-          _load();
-        },
+        onPressed: () async { await _db.insertRecipe(recipe); _load(); },
       ),
       duration: const Duration(seconds: 5),
     ));
@@ -128,9 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Tambah Kategori Baru'),
-        content: TextField(controller: ctrl, autofocus: true,
+        content: TextField(
+          controller: ctrl, autofocus: true,
           decoration: const InputDecoration(hintText: 'Nama kategori...'),
-          textCapitalization: TextCapitalization.words),
+          textCapitalization: TextCapitalization.words,
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
           ElevatedButton(
@@ -153,26 +156,47 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> get _allCategories =>
       [...AppConstants.categories, ..._customCategories.where((c) => !AppConstants.categories.contains(c))];
 
-  bool get _hasActiveFilter => _difficultyFilter.isNotEmpty || _maxTime < 999 || _sort != SortOption.newest;
+  bool get _hasActiveFilter =>
+      _difficultyFilter.isNotEmpty || _maxTime < 999 || _sort != SortOption.newest;
+
+  void _onBottomNavTap(int index) {
+    if (index == 0) {
+      setState(() => _bottomNavIndex = 0);
+      return;
+    }
+    // Push as new screen, stay "on" beranda in bottom nav
+    Widget screen;
+    switch (index) {
+      case 1: screen = const CommunityScreen();  break;
+      case 2: screen = const FavoritesScreen();  break;
+      case 3: screen = const ProfileScreen();    break;
+      default: return;
+    }
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
+        .then((_) => _load());
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: _AppDrawer(onRefresh: _load),
       appBar: AppBar(
-        title: const Text('ResepKu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
+        title: const Text('ResepKu',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
+            tooltip: 'Cari resep',
             onPressed: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => const SearchScreen()))
-                .then((_) => _load()),
+              context, MaterialPageRoute(builder: (_) => const SearchScreen()),
+            ).then((_) => _load()),
           ),
           Stack(children: [
             IconButton(
-                icon: const Icon(Icons.tune),
-                onPressed: _showSortFilter,
-                tooltip: 'Sort & Filter'),
+              icon: const Icon(Icons.tune),
+              onPressed: _showSortFilter,
+              tooltip: 'Sort & Filter',
+            ),
             if (_hasActiveFilter)
               Positioned(
                 right: 8, top: 8,
@@ -191,22 +215,64 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildBanner(),
+          _buildGreetingHeader(),
+          _buildSearchBar(),
+          _buildQuickStats(),
           _buildCategories(),
           if (_hasActiveFilter) _buildActiveFilterChips(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Text(
+                  _selectedCategory == 'Semua' ? 'Semua Resep' : _selectedCategory,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                if (!_loading)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${_filtered.length}',
+                      style: const TextStyle(
+                          color: AppTheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           Expanded(
             child: _hasError
-                ? ErrorView(message: 'Gagal memuat resep.\nCoba lagi.', onRetry: _load)
+                ? ErrorView(
+                    message: 'Gagal memuat resep.\nCoba lagi.',
+                    onRetry: _load)
                 : _loading
                     ? const ShimmerList(count: 3)
                     : _filtered.isEmpty
                         ? EmptyView(
                             icon: Icons.no_food,
                             title: 'Tidak Ada Resep',
-                            subtitle: _hasActiveFilter ? 'Coba ubah filter atau kategori' : 'Belum ada resep. Tambahkan resep pertamamu!',
-                            actionLabel: _hasActiveFilter ? null : 'Tambah Resep',
-                            onAction: _hasActiveFilter ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddRecipeScreen())).then((_) => _load()),
+                            subtitle: _hasActiveFilter
+                                ? 'Coba ubah filter atau kategori'
+                                : 'Belum ada resep.\nTambahkan resep pertamamu!',
+                            actionLabel:
+                                _hasActiveFilter ? null : 'Tambah Resep',
+                            onAction: _hasActiveFilter
+                                ? null
+                                : () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const AddRecipeScreen()),
+                                    ).then((_) => _load()),
                           )
                         : RefreshIndicator(
                             onRefresh: _load,
@@ -217,34 +283,52 @@ class _HomeScreenState extends State<HomeScreen> {
                                 key: Key('recipe_${_filtered[i].id}'),
                                 direction: DismissDirection.endToStart,
                                 background: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(16)),
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      borderRadius: BorderRadius.circular(16)),
                                   alignment: Alignment.centerRight,
                                   padding: const EdgeInsets.only(right: 20),
-                                  child: const Icon(Icons.delete, color: Colors.white),
+                                  child: const Icon(Icons.delete,
+                                      color: Colors.white),
                                 ),
                                 confirmDismiss: (_) async {
                                   return await showDialog<bool>(
                                     context: context,
                                     builder: (_) => AlertDialog(
                                       title: const Text('Hapus Resep?'),
-                                      content: Text('Hapus "${_filtered[i].title}"?'),
+                                      content: Text(
+                                          'Hapus "${_filtered[i].title}"?'),
                                       actions: [
-                                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context, false),
+                                          child: const Text('Batal'),
+                                        ),
                                         ElevatedButton(
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                          onPressed: () => Navigator.pop(context, true),
+                                          style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red),
+                                          onPressed: () =>
+                                              Navigator.pop(context, true),
                                           child: const Text('Hapus'),
                                         ),
                                       ],
                                     ),
                                   );
                                 },
-                                onDismissed: (_) => _deleteWithUndo(_filtered[i]),
+                                onDismissed: (_) =>
+                                    _deleteWithUndo(_filtered[i]),
                                 child: RecipeCard(
                                   recipe: _filtered[i],
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(recipe: _filtered[i]))).then((_) => _load()),
-                                  onFavorite: () => _toggleFavorite(_filtered[i]),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            DetailScreen(recipe: _filtered[i])),
+                                  ).then((_) => _load()),
+                                  onFavorite: () =>
+                                      _toggleFavorite(_filtered[i]),
                                 ),
                               ),
                             ),
@@ -253,113 +337,262 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddRecipeScreen())).then((_) => _load()),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
+        ).then((_) => _load()),
         backgroundColor: AppTheme.primary,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Tambah Resep', style: TextStyle(color: Colors.white)),
+        label: const Text('Tambah Resep',
+            style: TextStyle(color: Colors.white)),
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 0,
-        onTap: (i) {
-          if (i == 1) Navigator.push(context, MaterialPageRoute(builder: (_) => const FavoritesScreen())).then((_) => _load());
-        },
+        currentIndex: _bottomNavIndex,
+        onTap: _onBottomNavTap,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: AppTheme.primary,
+        unselectedItemColor: AppTheme.textSecondary,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Beranda'),
-          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Favorit'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Beranda'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.people_outline),
+              activeIcon: Icon(Icons.people),
+              label: 'Komunitas'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.favorite_border),
+              activeIcon: Icon(Icons.favorite),
+              label: 'Favorit'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Profil'),
         ],
       ),
     );
   }
 
-  Widget _buildBanner() {
+  // ── Greeting Header ────────────────────────────────────────────────────────
+
+  Widget _buildGreetingHeader() {
+    final user = FirebaseAuth.instance.currentUser;
+    final hour = DateTime.now().hour;
+    final greeting = hour < 11
+        ? 'Selamat Pagi'
+        : hour < 15
+            ? 'Selamat Siang'
+            : hour < 18
+                ? 'Selamat Sore'
+                : 'Selamat Malam';
+    final firstName = (user?.displayName ?? 'Pengguna').split(' ').first;
+
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [AppTheme.primary, Color(0xFFFF8C55)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: const LinearGradient(
+          colors: [AppTheme.primary, Color(0xFFFF8C55)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Mau masak apa hari ini?', style: TextStyle(color: Colors.white70, fontSize: 13)),
-          const SizedBox(height: 4),
-          const Text('Temukan Resep\nTerbaik!', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-            child: Text('${_filtered.length} Resep', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13)),
-          ),
-        ])),
-        const Icon(Icons.restaurant_menu, color: Colors.white30, size: 80),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              '$greeting, $firstName! 👋',
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Mau masak apa\nhari ini?',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  height: 1.3),
+            ),
+          ]),
+        ),
+        CircleAvatar(
+          radius: 30,
+          backgroundImage:
+              user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+          backgroundColor: Colors.white.withValues(alpha: 0.3),
+          child: user?.photoURL == null
+              ? const Icon(Icons.person, size: 30, color: Colors.white)
+              : null,
+        ),
       ]),
     );
   }
 
+  // ── Search Bar ─────────────────────────────────────────────────────────────
+
+  Widget _buildSearchBar() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SearchScreen()),
+      ).then((_) => _load()),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Theme.of(context).dividerColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(children: [
+          const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
+          const SizedBox(width: 10),
+          Text(
+            'Cari resep, bahan, atau kategori...',
+            style: TextStyle(
+                color: AppTheme.textSecondary.withValues(alpha: 0.8),
+                fontSize: 14),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ── Quick Stats ────────────────────────────────────────────────────────────
+
+  Widget _buildQuickStats() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(children: [
+        _StatCard(
+          icon: Icons.menu_book_outlined,
+          value: _loading ? '-' : '${_all.length}',
+          label: 'Total Resep',
+          color: AppTheme.primary,
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          icon: Icons.favorite_outline,
+          value: _loading ? '-' : '$_favCount',
+          label: 'Favorit',
+          color: Colors.red,
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          icon: Icons.emoji_food_beverage_outlined,
+          value: _loading ? '-' : '${_allCategories.length - 1}',
+          label: 'Kategori',
+          color: Colors.orange,
+        ),
+      ]),
+    );
+  }
+
+  // ── Category Chips ─────────────────────────────────────────────────────────
+
   Widget _buildCategories() {
-    return SizedBox(
-      height: 44,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _allCategories.length + 1,
-        itemBuilder: (_, i) {
-          if (i == _allCategories.length) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        height: 44,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          itemCount: _allCategories.length + 1,
+          itemBuilder: (_, i) {
+            if (i == _allCategories.length) {
+              return GestureDetector(
+                onTap: _showAddCategoryDialog,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppTheme.primary),
+                  ),
+                  child: const Row(children: [
+                    Icon(Icons.add, size: 16, color: AppTheme.primary),
+                    SizedBox(width: 4),
+                    Text('Kategori',
+                        style: TextStyle(color: AppTheme.primary, fontSize: 13)),
+                  ]),
+                ),
+              );
+            }
+            final cat = _allCategories[i];
+            final selected = cat == _selectedCategory;
+            final isCustom = !AppConstants.categories.contains(cat);
             return GestureDetector(
-              onTap: _showAddCategoryDialog,
+              onTap: () { setState(() => _selectedCategory = cat); _load(); },
+              onLongPress: isCustom
+                  ? () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: Text('Hapus kategori "$cat"?'),
+                          content: const Text(
+                              'Resep dengan kategori ini tidak ikut terhapus.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Batal'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Hapus',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await _db.deleteCustomCategory(cat);
+                        if (_selectedCategory == cat) {
+                          setState(() => _selectedCategory = 'Semua');
+                        }
+                        _load();
+                      }
+                    }
+                  : null,
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: Colors.transparent,
+                  color:
+                      selected ? AppTheme.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppTheme.primary),
+                  border: Border.all(
+                      color: selected
+                          ? AppTheme.primary
+                          : Theme.of(context).dividerColor),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.add, size: 16, color: AppTheme.primary),
-                  SizedBox(width: 4),
-                  Text('Kategori', style: TextStyle(color: AppTheme.primary, fontSize: 13)),
-                ]),
+                alignment: Alignment.center,
+                child: Text(
+                  cat,
+                  style: TextStyle(
+                    color: selected
+                        ? Colors.white
+                        : Theme.of(context).textTheme.bodyMedium?.color,
+                    fontWeight:
+                        selected ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 13,
+                  ),
+                ),
               ),
             );
-          }
-          final cat = _allCategories[i];
-          final selected = cat == _selectedCategory;
-          final isCustom = !AppConstants.categories.contains(cat);
-          return GestureDetector(
-            onTap: () { setState(() => _selectedCategory = cat); _load(); },
-            onLongPress: isCustom ? () async {
-              final confirm = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
-                title: Text('Hapus kategori "$cat"?'),
-                content: const Text('Resep dengan kategori ini tidak ikut terhapus.'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
-                  TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Hapus', style: TextStyle(color: Colors.red))),
-                ],
-              ));
-              if (confirm == true) {
-                await _db.deleteCustomCategory(cat);
-                if (_selectedCategory == cat) setState(() => _selectedCategory = 'Semua');
-                _load();
-              }
-            } : null,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: selected ? AppTheme.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: selected ? AppTheme.primary : Theme.of(context).dividerColor),
-              ),
-              alignment: Alignment.center,
-              child: Text(cat, style: TextStyle(
-                color: selected ? Colors.white : Theme.of(context).textTheme.bodyMedium?.color,
-                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
-              )),
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -368,14 +601,26 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Wrap(spacing: 6, children: [
-        if (_sort != SortOption.newest) _filterChip(
-          _sort == SortOption.ratingDesc ? 'Rating ↑' : _sort == SortOption.timeAsc ? 'Waktu ↑' : 'A–Z',
-          onDelete: () { setState(() { _sort = SortOption.newest; _applyFilters(); }); },
-        ),
+        if (_sort != SortOption.newest)
+          _filterChip(
+            _sort == SortOption.ratingDesc
+                ? 'Rating ↑'
+                : _sort == SortOption.timeAsc
+                    ? 'Waktu ↑'
+                    : 'A–Z',
+            onDelete: () {
+              setState(() { _sort = SortOption.newest; _applyFilters(); });
+            },
+          ),
         ..._difficultyFilter.map((d) => _filterChip(d,
-          onDelete: () { setState(() { _difficultyFilter.remove(d); _applyFilters(); }); })),
-        if (_maxTime < 999) _filterChip('≤$_maxTime mnt',
-          onDelete: () { setState(() { _maxTime = 999; _applyFilters(); }); }),
+            onDelete: () {
+              setState(() { _difficultyFilter.remove(d); _applyFilters(); });
+            })),
+        if (_maxTime < 999)
+          _filterChip('≤$_maxTime mnt',
+              onDelete: () {
+                setState(() { _maxTime = 999; _applyFilters(); });
+              }),
       ]),
     );
   }
@@ -408,7 +653,8 @@ class _HomeScreenState extends State<HomeScreen> {
             margin: const EdgeInsets.only(top: 12, bottom: 8),
             width: 40, height: 4,
             decoration: BoxDecoration(
-                color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -416,7 +662,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Icon(Icons.notifications, color: AppTheme.primary),
               SizedBox(width: 10),
               Text('Notifikasi',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
             ]),
           ),
           const Divider(),
@@ -431,6 +678,50 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ]),
           ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Stat Card ──────────────────────────────────────────────────────────────────
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  const _StatCard({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 6),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color)),
+          const SizedBox(height: 2),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11, color: AppTheme.textSecondary),
+              textAlign: TextAlign.center),
         ]),
       ),
     );
@@ -461,15 +752,18 @@ class _NotifTile extends StatelessWidget {
         child: Icon(icon, color: color, size: 22),
       ),
       title: Text(title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          style: const TextStyle(
+              fontWeight: FontWeight.w600, fontSize: 14)),
       subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const SizedBox(height: 2),
         Text(body, style: const TextStyle(fontSize: 13)),
         const SizedBox(height: 4),
         Text(time,
-            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+            style: const TextStyle(
+                fontSize: 11, color: AppTheme.textSecondary)),
       ]),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     );
   }
 }
@@ -482,13 +776,12 @@ class _AppDrawer extends StatelessWidget {
 
   void _go(BuildContext context, Widget screen, {bool refresh = false}) {
     final nav = Navigator.of(context);
-    nav.pop(); // close drawer
+    nav.pop();
     nav.push(MaterialPageRoute(builder: (_) => screen))
         .then((_) { if (refresh) onRefresh(); });
   }
 
   Future<void> _signOut(BuildContext context) async {
-    // Show dialog while drawer is still open, then act on result
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -500,14 +793,15 @@ class _AppDrawer extends StatelessWidget {
               child: const Text('Batal')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Keluar', style: TextStyle(color: Colors.red)),
+            child: const Text('Keluar',
+                style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
     if (confirm != true || !context.mounted) return;
     final nav = Navigator.of(context);
-    nav.pop(); // close drawer
+    nav.pop();
     await context.read<AuthProvider>().signOut();
     if (context.mounted) {
       nav.pushAndRemoveUntil(
@@ -529,7 +823,6 @@ class _AppDrawer extends StatelessWidget {
     return Drawer(
       child: SafeArea(
         child: Column(children: [
-          // ── Header ──────────────────────────────────────────────────────────
           Container(
             width: double.infinity,
             decoration: const BoxDecoration(
@@ -566,8 +859,6 @@ class _AppDrawer extends StatelessWidget {
               ),
             ]),
           ),
-
-          // ── Menu Items ───────────────────────────────────────────────────────
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -595,7 +886,8 @@ class _AppDrawer extends StatelessWidget {
                 _DrawerItem(
                   icon: Icons.favorite_outline,
                   label: 'Favorit',
-                  onTap: () => _go(context, const FavoritesScreen(), refresh: true),
+                  onTap: () =>
+                      _go(context, const FavoritesScreen(), refresh: true),
                 ),
                 const Divider(indent: 20, endIndent: 20),
                 _DrawerItem(
@@ -606,8 +898,6 @@ class _AppDrawer extends StatelessWidget {
               ],
             ),
           ),
-
-          // ── Keluar ───────────────────────────────────────────────────────────
           const Divider(height: 1),
           _DrawerItem(
             icon: Icons.logout,
@@ -640,10 +930,12 @@ class _DrawerItem extends StatelessWidget {
     return ListTile(
       leading: Icon(icon, color: c, size: 22),
       title: Text(label,
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c)),
+          style: TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w500, color: c)),
       onTap: onTap,
       horizontalTitleGap: 8,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
@@ -678,7 +970,8 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
     super.initState();
     _sort = widget.currentSort;
     _difficulty = Set.from(widget.difficultyFilter);
-    _maxTime = widget.maxTime >= 999 ? 180.0 : widget.maxTime.toDouble();
+    _maxTime =
+        widget.maxTime >= 999 ? 180.0 : widget.maxTime.toDouble();
   }
 
   @override
@@ -688,25 +981,42 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
       minChildSize: 0.4,
       maxChildSize: 0.9,
       expand: false,
-      builder: (_, ctrl) => Column(
-        children: [
-          Container(margin: const EdgeInsets.only(top: 12, bottom: 8), width: 40, height: 4,
-            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-          Padding(
+      builder: (_, ctrl) => Column(children: [
+        Container(
+          margin: const EdgeInsets.only(top: 12, bottom: 8),
+          width: 40, height: 4,
+          decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(children: [
+            const Text('Sort & Filter',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Spacer(),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _sort = SortOption.newest;
+                  _difficulty.clear();
+                  _maxTime = 180;
+                });
+              },
+              child: const Text('Reset',
+                  style: TextStyle(color: AppTheme.primary)),
+            ),
+          ]),
+        ),
+        const Divider(),
+        Expanded(
+          child: ListView(
+            controller: ctrl,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              const Text('Sort & Filter', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              TextButton(
-                onPressed: () { setState(() { _sort = SortOption.newest; _difficulty.clear(); _maxTime = 180; }); },
-                child: const Text('Reset', style: TextStyle(color: AppTheme.primary)),
-              ),
-            ]),
-          ),
-          const Divider(),
-          Expanded(
-            child: ListView(controller: ctrl, padding: const EdgeInsets.symmetric(horizontal: 20), children: [
-              const Text('Urutkan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            children: [
+              const Text('Urutkan',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: [
                 _sortChip('Terbaru', SortOption.newest),
@@ -715,22 +1025,40 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                 _sortChip('Nama A–Z', SortOption.nameAsc),
               ]),
               const SizedBox(height: 20),
-              const Text('Kesulitan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const Text('Kesulitan',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
-              Wrap(spacing: 8, children: AppConstants.difficulties.map((d) => FilterChip(
-                label: Text(d),
-                selected: _difficulty.contains(d),
-                selectedColor: AppTheme.primary.withValues(alpha: 0.15),
-                checkmarkColor: AppTheme.primary,
-                onSelected: (v) => setState(() { v ? _difficulty.add(d) : _difficulty.remove(d); }),
-              )).toList()),
+              Wrap(
+                spacing: 8,
+                children: AppConstants.difficulties
+                    .map((d) => FilterChip(
+                          label: Text(d),
+                          selected: _difficulty.contains(d),
+                          selectedColor:
+                              AppTheme.primary.withValues(alpha: 0.15),
+                          checkmarkColor: AppTheme.primary,
+                          onSelected: (v) => setState(() {
+                            v
+                                ? _difficulty.add(d)
+                                : _difficulty.remove(d);
+                          }),
+                        ))
+                    .toList(),
+              ),
               const SizedBox(height: 20),
               Row(children: [
-                const Text('Waktu Maksimal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                const Text('Waktu Maksimal',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
                 const Spacer(),
                 Text(
-                  _maxTime >= 180 ? 'Semua' : '${_maxTime.round()} menit',
-                  style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold),
+                  _maxTime >= 180
+                      ? 'Semua'
+                      : '${_maxTime.round()} menit',
+                  style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.bold),
                 ),
               ]),
               Slider(
@@ -739,24 +1067,36 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                 activeColor: AppTheme.primary,
                 onChanged: (v) => setState(() => _maxTime = v),
               ),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const Text('15 mnt', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                const Text('180 mnt+', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-              ]),
+              Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text('15 mnt',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary)),
+                    Text('180 mnt+',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary)),
+                  ]),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () {
-                  widget.onApply(_sort, _difficulty, _maxTime >= 180 ? 999 : _maxTime.round());
+                  widget.onApply(_sort, _difficulty,
+                      _maxTime >= 180 ? 999 : _maxTime.round());
                   Navigator.pop(context);
                 },
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('Terapkan Filter', style: TextStyle(fontSize: 16)),
+                style: ElevatedButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14)),
+                child: const Text('Terapkan Filter',
+                    style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 16),
-            ]),
+            ],
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
