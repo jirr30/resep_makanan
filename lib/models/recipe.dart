@@ -90,6 +90,10 @@ class Recipe {
     bool? isFavorite,
     double? userRating,
     String? imagePath,
+    int? calories,
+    double? protein,
+    double? carbs,
+    double? fat,
   }) {
     return Recipe(
       id: id,
@@ -106,10 +110,10 @@ class Recipe {
       userRating: userRating ?? this.userRating,
       difficulty: difficulty,
       isFavorite: isFavorite ?? this.isFavorite,
-      calories: calories,
-      protein: protein,
-      carbs: carbs,
-      fat: fat,
+      calories: calories ?? this.calories,
+      protein: protein ?? this.protein,
+      carbs: carbs ?? this.carbs,
+      fat: fat ?? this.fat,
     );
   }
 }

@@ -8,6 +8,7 @@ import '../models/recipe.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
+import '../services/nutrition_service.dart';
 import '../utils/app_theme.dart';
 import 'edit_recipe_screen.dart';
 import 'cooking_mode_screen.dart';
@@ -41,7 +42,8 @@ class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderSt
   late Recipe _recipe;
   final _db = DatabaseService();
   final _notif = NotificationService();
-  int _servings = 0; // 0 = pakai default recipe.servings
+  int _servings = 0;
+  bool _calculatingNutrition = false;
 
   int get _currentServings => _servings == 0 ? _recipe.servings : _servings;
   double get _scaleFactor => _currentServings / _recipe.servings;
@@ -136,6 +138,39 @@ Dibagikan dari aplikasi ResepKu
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Gagal membagikan resep. Coba lagi.')),
       );
+    }
+  }
+
+  Future<void> _calculateAndSaveNutrition() async {
+    setState(() => _calculatingNutrition = true);
+    try {
+      final result = await NutritionService().estimateFromIngredients(
+        ingredients: _recipe.ingredients,
+        servings: _recipe.servings,
+      );
+      if (!mounted) return;
+      final updated = _recipe.copyWith(
+        calories: result.calories,
+        protein: result.protein,
+        carbs: result.carbs,
+        fat: result.fat,
+      );
+      await _db.updateRecipe(updated);
+      if (mounted) {
+        setState(() => _recipe = updated);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Nutrisi berhasil dihitung!'),
+          backgroundColor: AppTheme.primary,
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal menghitung nutrisi. Periksa koneksi dan coba lagi.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _calculatingNutrition = false);
     }
   }
 
@@ -423,9 +458,26 @@ Dibagikan dari aplikasi ResepKu
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.no_food, size: 60, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
-          const Text('Informasi nutrisi belum tersedia', style: TextStyle(color: AppTheme.textSecondary)),
-          const SizedBox(height: 8),
-          TextButton(onPressed: _openEdit, child: const Text('Tambah di Edit Resep', style: TextStyle(color: AppTheme.primary))),
+          const Text('Informasi nutrisi belum tersedia', style: TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
+          const SizedBox(height: 4),
+          const Text('Hitung otomatis menggunakan AI dari bahan resep', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const SizedBox(height: 20),
+          _calculatingNutrition
+              ? const Column(children: [
+                  CircularProgressIndicator(color: AppTheme.primary),
+                  SizedBox(height: 12),
+                  Text('Menghitung nutrisi dengan AI...', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                ])
+              : ElevatedButton.icon(
+                  onPressed: _calculateAndSaveNutrition,
+                  icon: const Icon(Icons.auto_awesome),
+                  label: const Text('Hitung Nutrisi Otomatis'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                ),
         ]),
       );
     }
