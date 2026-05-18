@@ -50,8 +50,7 @@ class LoginScreen extends StatelessWidget {
                   },
                   icon: auth.loading
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Image.network('https://www.google.com/favicon.ico', width: 20, height: 20,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.login, size: 20)),
+                      : const _GoogleLogo(),
                   label: Text(auth.loading ? 'Memuat...' : 'Masuk dengan Google'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
@@ -69,6 +68,32 @@ class LoginScreen extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleLogo extends StatelessWidget {
+  const _GoogleLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: const Text(
+        'G',
+        style: TextStyle(
+          color: Color(0xFF4285F4),
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          height: 1,
         ),
       ),
     );

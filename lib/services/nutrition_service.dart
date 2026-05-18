@@ -16,15 +16,16 @@ class NutritionResult {
 }
 
 class NutritionService {
-  static const _apiKey = 'AIzaSyBaE4T7wXrNpKqFBp9MwLkP45H2tOGJISU';
+  // Inject at build time: flutter run --dart-define=GEMINI_API_KEY=your_key_here
+  static const _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   Future<NutritionResult> estimateFromIngredients({
     required List<String> ingredients,
     required int servings,
   }) async {
     if (ingredients.isEmpty) throw Exception('Bahan tidak boleh kosong');
-    if (_apiKey == 'GEMINI_API_KEY_PLACEHOLDER') {
-      throw Exception('API key belum dikonfigurasi');
+    if (_apiKey.isEmpty) {
+      throw Exception('API key belum dikonfigurasi. Tambahkan --dart-define=GEMINI_API_KEY=xxx saat build.');
     }
 
     final model = GenerativeModel(

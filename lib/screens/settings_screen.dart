@@ -3,10 +3,13 @@ import 'package:in_app_review/in_app_review.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
+import 'login_screen.dart';
+import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -139,6 +142,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ]),
           _divider(),
 
+          _buildAccountSection(context),
+          _divider(),
+
           _sectionHeader('Tentang'),
           ListTile(
             leading: const Icon(Icons.star_rate, color: Colors.amber),
@@ -146,6 +152,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('Bantu kami dengan memberikan rating'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _rateApp,
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined, color: AppTheme.primary),
+            title: const Text('Kebijakan Privasi'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
           ),
           ListTile(
             leading: const Icon(Icons.info_outline, color: AppTheme.primary),
@@ -161,6 +173,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildAccountSection(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    if (auth.isLoggedIn) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader('Akun'),
+          ListTile(
+            leading: CircleAvatar(
+              radius: 18,
+              backgroundImage: auth.user?.photoURL != null ? NetworkImage(auth.user!.photoURL!) : null,
+              backgroundColor: AppTheme.primary,
+              child: auth.user?.photoURL == null
+                  ? const Icon(Icons.person, size: 18, color: Colors.white)
+                  : null,
+            ),
+            title: Text(auth.user?.displayName ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(auth.user?.email ?? '', style: const TextStyle(fontSize: 12)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Keluar', style: TextStyle(color: Colors.red)),
+            subtitle: const Text('Keluar dari akun Google'),
+            onTap: () => _signOut(context),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('Akun'),
+        ListTile(
+          leading: const Icon(Icons.login, color: AppTheme.primary),
+          title: const Text('Masuk ke Komunitas'),
+          subtitle: const Text('Login untuk berbagi dan menilai resep'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Keluar'),
+        content: const Text('Yakin ingin keluar dari akun?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Keluar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && context.mounted) {
+      await context.read<AuthProvider>().signOut();
+    }
   }
 
   Widget _sectionHeader(String title) => Padding(

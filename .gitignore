@@ -49,3 +49,6 @@ app.*.map.json
 *.keystore
 android/key.properties
 *-base64.txt
+
+# Secret build defines - JANGAN commit!
+dart_defines.env
