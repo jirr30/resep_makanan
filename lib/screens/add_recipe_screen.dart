@@ -288,10 +288,10 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                     child: const Icon(Icons.edit, color: Colors.white, size: 32)),
                 ]),
               )
-            : const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
-                SizedBox(height: 8),
-                Text('Pilih foto dari galeri (opsional)', style: TextStyle(color: AppTheme.textSecondary)),
+            : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
+                const SizedBox(height: 8),
+                Text('Pilih foto dari galeri (opsional)', style: TextStyle(color: AppTheme.textSubOn(context))),
               ]),
       ),
     );
@@ -299,6 +299,6 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
 
   Widget _section(String title) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
-    child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+    child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
   );
 }

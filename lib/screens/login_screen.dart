@@ -26,13 +26,13 @@ class LoginScreen extends StatelessWidget {
                 child: const Icon(Icons.people_alt_outlined, size: 64, color: AppTheme.primary),
               ),
               const SizedBox(height: 32),
-              const Text('Komunitas ResepKu',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+              Text('Komunitas ResepKu',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Login untuk berbagi resep kamu\ndan melihat resep dari pengguna lain',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, color: AppTheme.textSecondary, height: 1.5),
+                style: TextStyle(fontSize: 15, color: AppTheme.textSubOn(context), height: 1.5),
               ),
               const SizedBox(height: 48),
               SizedBox(
@@ -64,7 +64,7 @@ class LoginScreen extends StatelessWidget {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Lanjut tanpa login', style: TextStyle(color: AppTheme.textSecondary)),
+                child: Text('Lanjut tanpa login', style: TextStyle(color: AppTheme.textSubOn(context))),
               ),
             ],
           ),

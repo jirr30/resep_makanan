@@ -218,12 +218,12 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
                     child: const Icon(Icons.edit, color: Colors.white, size: 32)),
                 ]),
               )
-            : const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
-                SizedBox(height: 8),
-                Text('Ketuk untuk pilih foto dari galeri', style: TextStyle(color: AppTheme.textSecondary)),
-                SizedBox(height: 4),
-                Text('(atau gunakan URL gambar di bawah)', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+            : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
+                const SizedBox(height: 8),
+                Text('Ketuk untuk pilih foto dari galeri', style: TextStyle(color: AppTheme.textSubOn(context))),
+                const SizedBox(height: 4),
+                Text('(atau gunakan URL gambar di bawah)', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12)),
               ]),
       ),
     );
@@ -283,6 +283,6 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
 
   Widget _section(String title) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
-    child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+    child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
   );
 }

@@ -195,7 +195,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               controller: _tabController,
               labelColor: AppTheme.primary,
               indicatorColor: AppTheme.primary,
-              unselectedLabelColor: AppTheme.textSecondary,
+              unselectedLabelColor: AppTheme.textSubOn(context),
               tabs: [
                 const Tab(text: 'Bahan'),
                 const Tab(text: 'Cara Masak'),
@@ -371,7 +371,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
           if (widget.recipe.publishedAt != null)
             Text(
               'Dibagikan ${DateFormat('d MMM yyyy', 'id_ID').format(widget.recipe.publishedAt!)}',
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+              style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
             ),
         ])),
       ]),
@@ -405,7 +405,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
           if (_ratingCount > 0) ...[
             const SizedBox(width: 6),
             Text('($_ratingCount ulasan)',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
           ],
         ]),
         const SizedBox(height: 14),
@@ -414,11 +414,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
 
         // Aksi rating user
         if (_isOwner)
-          Row(children: const [
-            Icon(Icons.info_outline, size: 16, color: AppTheme.textSecondary),
-            SizedBox(width: 6),
+          Row(children: [
+            Icon(Icons.info_outline, size: 16, color: AppTheme.textSubOn(context)),
+            const SizedBox(width: 6),
             Text('Kamu tidak bisa menilai resep sendiri',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
           ])
         else if (_currentUserId == null)
           GestureDetector(
@@ -447,13 +447,13 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
             ),
             const SizedBox(height: 8),
             _ratingLoading
-                ? const SizedBox(
+                ? SizedBox(
                     height: 36,
                     child: Row(children: [
-                      SizedBox(width: 24, height: 24,
+                      const SizedBox(width: 24, height: 24,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
-                      SizedBox(width: 12),
-                      Text('Menyimpan...', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                      const SizedBox(width: 12),
+                      Text('Menyimpan...', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
                     ]),
                   )
                 : RatingBar.builder(
@@ -469,7 +469,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
                   'Kamu memberi ${_userRating.toStringAsFixed(0)} bintang',
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
                 ),
               ),
           ]),
@@ -525,11 +525,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     final noData = widget.recipe.calories == 0 && widget.recipe.protein == 0
         && widget.recipe.carbs == 0 && widget.recipe.fat == 0;
     if (noData) {
-      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.info_outline, size: 48, color: AppTheme.textSecondary),
-        SizedBox(height: 12),
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.info_outline, size: 48, color: AppTheme.textSubOn(context)),
+        const SizedBox(height: 12),
         Text('Informasi nutrisi tidak tersedia',
-            style: TextStyle(color: AppTheme.textSecondary)),
+            style: TextStyle(color: AppTheme.textSubOn(context))),
       ]));
     }
     return Padding(
@@ -701,12 +701,12 @@ class _CommentsTabState extends State<_CommentsTab> {
             }
             final comments = snap.data ?? [];
             if (comments.isEmpty) {
-              return const Center(
+              return Center(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.chat_bubble_outline, size: 48, color: AppTheme.textSecondary),
-                  SizedBox(height: 12),
+                  Icon(Icons.chat_bubble_outline, size: 48, color: AppTheme.textSubOn(context)),
+                  const SizedBox(height: 12),
                   Text('Belum ada komentar. Jadilah yang pertama!',
-                      style: TextStyle(color: AppTheme.textSecondary),
+                      style: TextStyle(color: AppTheme.textSubOn(context)),
                       textAlign: TextAlign.center),
                 ]),
               );
@@ -734,9 +734,9 @@ class _CommentsTabState extends State<_CommentsTab> {
     if (_uid == null) {
       return Container(
         padding: const EdgeInsets.all(16),
-        child: const Text(
+        child: Text(
           'Login untuk berkomentar',
-          style: TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(color: AppTheme.textSubOn(context)),
           textAlign: TextAlign.center,
         ),
       );
@@ -757,11 +757,11 @@ class _CommentsTabState extends State<_CommentsTab> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
-                  borderSide: const BorderSide(color: AppTheme.borderLight),
+                  borderSide: BorderSide(color: AppTheme.borderOn(context)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
-                  borderSide: const BorderSide(color: AppTheme.borderLight),
+                  borderSide: BorderSide(color: AppTheme.borderOn(context)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -829,7 +829,7 @@ class _CommentBubble extends StatelessWidget {
             if (comment.createdAt != null)
               Text(
                 DateFormat('d MMM, HH:mm', 'id_ID').format(comment.createdAt!),
-                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context)),
               ),
             if (isOwn)
               GestureDetector(
@@ -846,9 +846,7 @@ class _CommentBubble extends StatelessWidget {
             decoration: BoxDecoration(
               color: isOwn
                   ? AppTheme.primary.withValues(alpha: 0.08)
-                  : Theme.of(context).brightness == Brightness.dark
-                      ? AppTheme.surfaceDark
-                      : AppTheme.bgLight,
+                  : AppTheme.surfaceOn(context),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(comment.text, style: const TextStyle(fontSize: 14, height: 1.4)),
@@ -901,7 +899,7 @@ class _NutritionCard extends StatelessWidget {
         Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
         Text(unit, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7))),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
       ]),
     );
   }

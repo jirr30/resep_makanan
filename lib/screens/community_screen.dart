@@ -238,7 +238,7 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
       child: SearchBar(
         controller: _searchCtrl,
         hintText: 'Cari resep atau nama chef...',
-        leading: const Icon(Icons.search, color: AppTheme.textSecondary),
+        leading: Icon(Icons.search, color: AppTheme.textSubOn(context)),
         trailing: [
           if (_searchQuery.isNotEmpty)
             IconButton(
@@ -255,15 +255,11 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
           }
         },
         elevation: const WidgetStatePropertyAll(0),
-        backgroundColor: WidgetStatePropertyAll(
-          Theme.of(context).brightness == Brightness.dark
-              ? AppTheme.surfaceDark
-              : AppTheme.bgLight,
-        ),
+        backgroundColor: WidgetStatePropertyAll(AppTheme.surfaceOn(context)),
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: AppTheme.borderLight),
+            side: BorderSide(color: AppTheme.borderOn(context)),
           ),
         ),
       ),
@@ -285,7 +281,7 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
           return FilterChip(
             label: Text(cat, style: TextStyle(
               fontSize: 12,
-              color: selected ? Colors.white : AppTheme.textSecondary,
+              color: selected ? Colors.white : AppTheme.textSubOn(context),
               fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
             )),
             selected: selected,
@@ -297,7 +293,7 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
             backgroundColor: Colors.transparent,
             selectedColor: AppTheme.primary,
             checkmarkColor: Colors.white,
-            side: BorderSide(color: selected ? AppTheme.primary : AppTheme.borderLight),
+            side: BorderSide(color: selected ? AppTheme.primary : AppTheme.borderOn(context)),
             padding: const EdgeInsets.symmetric(horizontal: 4),
           );
         },
@@ -311,29 +307,29 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
     }
     if (_error != null) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.wifi_off, size: 48, color: AppTheme.textSecondary),
+        Icon(Icons.wifi_off, size: 48, color: AppTheme.textSubOn(context)),
         const SizedBox(height: 12),
-        const Text('Gagal memuat resep', style: TextStyle(color: AppTheme.textSecondary)),
+        Text('Gagal memuat resep', style: TextStyle(color: AppTheme.textSubOn(context))),
         const SizedBox(height: 12),
         ElevatedButton(onPressed: _loadInitial, child: const Text('Coba Lagi')),
       ]));
     }
     if (_searchLoading) {
-      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        CircularProgressIndicator(color: AppTheme.primary),
-        SizedBox(height: 12),
-        Text('Memuat semua resep untuk pencarian...', style: TextStyle(color: AppTheme.textSecondary)),
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const CircularProgressIndicator(color: AppTheme.primary),
+        const SizedBox(height: 12),
+        Text('Memuat semua resep untuk pencarian...', style: TextStyle(color: AppTheme.textSubOn(context))),
       ]));
     }
 
     final list = _displayList;
     if (list.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.search_off, size: 64, color: AppTheme.textSecondary),
+        Icon(Icons.search_off, size: 64, color: AppTheme.textSubOn(context)),
         const SizedBox(height: 16),
         Text(
           _isSearching ? 'Tidak ada resep untuk "$_searchQuery"' : 'Belum ada resep dari komunitas',
-          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+          style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 15),
           textAlign: TextAlign.center,
         ),
         if (_isSearching) ...[
@@ -393,11 +389,11 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
     if (_recipes.isEmpty) {
-      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSecondary),
-        SizedBox(height: 16),
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSubOn(context)),
+        const SizedBox(height: 16),
         Text('Belum ada resep yang kamu bagikan',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
+            style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 15)),
       ]));
     }
     return RefreshIndicator(
@@ -474,7 +470,7 @@ class _CommunityCard extends StatelessWidget {
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                   if (recipe.publishedAt != null)
                     Text(DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                        style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
                 ])),
                 if (showDelete)
                   IconButton(
@@ -489,7 +485,7 @@ class _CommunityCard extends StatelessWidget {
                   maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 4),
               Text(recipe.description,
-                  style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                  style: TextStyle(fontSize: 13, color: AppTheme.textSubOn(context)),
                   maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 10),
               Row(children: [
@@ -502,12 +498,12 @@ class _CommunityCard extends StatelessWidget {
                 const Icon(Icons.favorite, size: 14, color: Colors.red),
                 const SizedBox(width: 4),
                 Text('${recipe.likes}',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
                 const SizedBox(width: 10),
-                const Icon(Icons.comment_outlined, size: 14, color: AppTheme.textSecondary),
+                Icon(Icons.comment_outlined, size: 14, color: AppTheme.textSubOn(context)),
                 const SizedBox(width: 4),
                 Text('${recipe.commentCount}',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
               ]),
             ]),
           ),
@@ -533,14 +529,14 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.bgLight,
+        color: AppTheme.surfaceOn(context),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDFE6E9)),
+        border: Border.all(color: AppTheme.borderOn(context)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 11, color: AppTheme.textSecondary),
+        Icon(icon, size: 11, color: AppTheme.textSubOn(context)),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+        Text(label, style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
       ]),
     );
   }
@@ -555,10 +551,10 @@ class _LoginPrompt extends StatelessWidget {
     return Center(child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.lock_outline, size: 64, color: AppTheme.textSecondary),
+        Icon(Icons.lock_outline, size: 64, color: AppTheme.textSubOn(context)),
         const SizedBox(height: 16),
-        const Text('Login untuk melihat resep kamu',
-            style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
+        Text('Login untuk melihat resep kamu',
+            style: TextStyle(fontSize: 16, color: AppTheme.textSubOn(context))),
         const SizedBox(height: 24),
         ElevatedButton.icon(
           onPressed: onLogin,

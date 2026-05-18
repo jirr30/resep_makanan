@@ -99,16 +99,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               if (_stats!.recipes.isEmpty)
-                const SliverFillRemaining(
+                SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
                     child: Padding(
-                      padding: EdgeInsets.all(32),
+                      padding: const EdgeInsets.all(32),
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSecondary),
-                        SizedBox(height: 12),
+                        Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSubOn(context)),
+                        const SizedBox(height: 12),
                         Text('Belum ada resep yang dipublikasikan',
-                            style: TextStyle(color: AppTheme.textSecondary)),
+                            style: TextStyle(color: AppTheme.textSubOn(context))),
                       ]),
                     ),
                   ),
@@ -152,7 +152,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 4),
         Text(
           user.email ?? '',
-          style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+          style: TextStyle(fontSize: 14, color: AppTheme.textSubOn(context)),
         ),
         const SizedBox(height: 8),
         Container(
@@ -227,7 +227,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+          Text(label, style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
         ]),
       ),
     );
@@ -268,7 +268,7 @@ class _ProfileRecipeCard extends StatelessWidget {
               Row(children: [
                 const Icon(Icons.favorite, size: 13, color: Colors.red),
                 const SizedBox(width: 4),
-                Text('${recipe.likes}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                Text('${recipe.likes}', style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
                 const SizedBox(width: 12),
                 const Icon(Icons.star, size: 13, color: Colors.amber),
                 const SizedBox(width: 4),
@@ -276,18 +276,18 @@ class _ProfileRecipeCard extends StatelessWidget {
                   recipe.averageRating > 0
                       ? recipe.averageRating.toStringAsFixed(1)
                       : '-',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context)),
                 ),
                 const SizedBox(width: 12),
-                const Icon(Icons.comment_outlined, size: 13, color: AppTheme.textSecondary),
+                Icon(Icons.comment_outlined, size: 13, color: AppTheme.textSubOn(context)),
                 const SizedBox(width: 4),
-                Text('${recipe.commentCount}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                Text('${recipe.commentCount}', style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
               ]),
               if (recipe.publishedAt != null) ...[
                 const SizedBox(height: 4),
                 Text(
                   DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context)),
                 ),
               ],
             ])),

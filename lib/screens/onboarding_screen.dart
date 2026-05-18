@@ -69,7 +69,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               alignment: Alignment.topRight,
               child: TextButton(
                 onPressed: _finish,
-                child: const Text('Lewati', style: TextStyle(color: AppTheme.textSecondary)),
+                child: Text('Lewati', style: TextStyle(color: AppTheme.textSubOn(context))),
               ),
             ),
             Expanded(
@@ -158,13 +158,13 @@ class _OnboardPage extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppTheme.textOn(context)),
           ),
           const SizedBox(height: 16),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, color: AppTheme.textSecondary, height: 1.6),
+            style: TextStyle(fontSize: 16, color: AppTheme.textSubOn(context), height: 1.6),
           ),
         ],
       ),

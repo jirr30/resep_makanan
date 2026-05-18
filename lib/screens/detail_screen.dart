@@ -282,9 +282,9 @@ Dibagikan dari aplikasi ResepKu
                         Text(_recipe.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       ]),
                       const SizedBox(height: 10),
-                      Text(_recipe.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                      Text(_recipe.title, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
                       const SizedBox(height: 8),
-                      Text(_recipe.description, style: const TextStyle(fontSize: 15, color: AppTheme.textSecondary, height: 1.5)),
+                      Text(_recipe.description, style: TextStyle(fontSize: 15, color: AppTheme.textSubOn(context), height: 1.5)),
                       const SizedBox(height: 16),
                       Row(children: [
                         _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: 'menit'),
@@ -330,7 +330,7 @@ Dibagikan dari aplikasi ResepKu
                 TabBar(
                   controller: _tabController,
                   labelColor: AppTheme.primary,
-                  unselectedLabelColor: AppTheme.textSecondary,
+                  unselectedLabelColor: AppTheme.textSubOn(context),
                   indicatorColor: AppTheme.primary,
                   tabs: const [
                     Tab(text: 'Bahan'),
@@ -398,7 +398,7 @@ Dibagikan dari aplikasi ResepKu
             const SizedBox(width: 12),
             Text(
               _recipe.userRating == 0 ? 'Belum dirating' : '${_recipe.userRating.toStringAsFixed(1)} / 5.0',
-              style: const TextStyle(color: AppTheme.textSecondary),
+              style: TextStyle(color: AppTheme.textSubOn(context)),
             ),
           ]),
         ],
@@ -488,17 +488,17 @@ Dibagikan dari aplikasi ResepKu
     if (!hasData) {
       return Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.no_food, size: 60, color: AppTheme.textSecondary),
+          Icon(Icons.no_food, size: 60, color: AppTheme.textSubOn(context)),
           const SizedBox(height: 12),
-          const Text('Informasi nutrisi belum tersedia', style: TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
+          Text('Informasi nutrisi belum tersedia', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 15)),
           const SizedBox(height: 4),
-          const Text('Hitung otomatis menggunakan AI dari bahan resep', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          Text('Hitung otomatis menggunakan AI dari bahan resep', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12)),
           const SizedBox(height: 20),
           _calculatingNutrition
-              ? const Column(children: [
-                  CircularProgressIndicator(color: AppTheme.primary),
-                  SizedBox(height: 12),
-                  Text('Menghitung nutrisi dengan AI...', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              ? Column(children: [
+                  const CircularProgressIndicator(color: AppTheme.primary),
+                  const SizedBox(height: 12),
+                  Text('Menghitung nutrisi dengan AI...', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
                 ])
               : ElevatedButton.icon(
                   onPressed: _calculateAndSaveNutrition,
@@ -518,7 +518,7 @@ Dibagikan dari aplikasi ResepKu
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Per porsi', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          Text('Per porsi', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
           const SizedBox(height: 16),
           _NutritionRow(label: 'Kalori', value: '${_recipe.calories} kkal', icon: Icons.local_fire_department, color: Colors.orange),
           _NutritionRow(label: 'Protein', value: '${_recipe.protein.toStringAsFixed(1)} g', icon: Icons.egg, color: Colors.blue),
@@ -634,9 +634,9 @@ class _TimerSheetState extends State<_TimerSheet> {
 
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: AppTheme.cardOn(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -656,8 +656,8 @@ class _TimerSheetState extends State<_TimerSheet> {
               ),
             ),
             Column(children: [
-              Text(_format(_remaining), style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-              Text(isDone ? 'Selesai!' : (_running ? 'Sedang berjalan' : 'Dijeda'), style: TextStyle(color: isDone ? Colors.green : AppTheme.textSecondary)),
+              Text(_format(_remaining), style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
+              Text(isDone ? 'Selesai!' : (_running ? 'Sedang berjalan' : 'Dijeda'), style: TextStyle(color: isDone ? Colors.green : AppTheme.textSubOn(context))),
             ]),
           ]),
           const SizedBox(height: 32),
@@ -665,7 +665,7 @@ class _TimerSheetState extends State<_TimerSheet> {
             IconButton(
               onPressed: _reset,
               icon: const Icon(Icons.refresh, size: 32),
-              color: AppTheme.textSecondary,
+              color: AppTheme.textSubOn(context),
             ),
             const SizedBox(width: 24),
             ElevatedButton.icon(
@@ -702,8 +702,8 @@ class _StatCard extends StatelessWidget {
         child: Column(children: [
           Icon(icon, color: AppTheme.primary, size: 22),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary)),
-          Text(unit, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+          Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textOn(context))),
+          Text(unit, style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
         ]),
       ),
     );
@@ -746,7 +746,7 @@ class _MacroLegend extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
       const SizedBox(width: 4),
-      Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+      Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
     ]);
   }
 }

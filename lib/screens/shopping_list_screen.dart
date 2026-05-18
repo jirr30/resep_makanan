@@ -163,7 +163,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
 
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-    child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary, fontSize: 13)),
+    child: Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSubOn(context), fontSize: 13)),
   );
 
   Widget _buildItem(Map<String, dynamic> item) {
@@ -193,11 +193,11 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
         ),
         title: Text(
           item['name'] as String,
-          style: TextStyle(decoration: checked ? TextDecoration.lineThrough : null, color: checked ? AppTheme.textSecondary : null),
+          style: TextStyle(decoration: checked ? TextDecoration.lineThrough : null, color: checked ? AppTheme.textSubOn(context) : null),
         ),
-        subtitle: item['quantity'] != null ? Text(item['quantity'] as String, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)) : null,
+        subtitle: item['quantity'] != null ? Text(item['quantity'] as String, style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)) : null,
         trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, size: 20, color: AppTheme.textSecondary),
+          icon: Icon(Icons.delete_outline, size: 20, color: AppTheme.textSubOn(context)),
           onPressed: () async { await _db.deleteShoppingItem(item['id'] as int); _load(); },
         ),
       ),

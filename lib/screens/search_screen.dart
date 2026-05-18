@@ -116,7 +116,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                           child: Text('${_results.length} hasil ditemukan',
-                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                            style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
                         ),
                         Expanded(
                           child: ListView.builder(
@@ -141,7 +141,7 @@ class _SearchScreenState extends State<SearchScreen> {
           Row(children: [
             const Text('Pencarian Terakhir', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const Spacer(),
-            TextButton(onPressed: _clearRecent, child: const Text('Hapus', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13))),
+            TextButton(onPressed: _clearRecent, child: Text('Hapus', style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13))),
           ]),
           const SizedBox(height: 8),
           Wrap(
@@ -156,7 +156,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   border: Border.all(color: Theme.of(context).dividerColor),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.history, size: 16, color: AppTheme.textSecondary),
+                  Icon(Icons.history, size: 16, color: AppTheme.textSubOn(context)),
                   const SizedBox(width: 6),
                   Text(q, style: const TextStyle(fontSize: 14)),
                 ]),

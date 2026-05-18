@@ -91,10 +91,10 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.bold,
-          color: AppTheme.textPrimary,
+          color: AppTheme.textOn(context),
         ),
       );
 }
@@ -124,9 +124,9 @@ class _Body extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
-          color: AppTheme.textSecondary,
+          color: AppTheme.textSubOn(context),
           height: 1.6,
         ),
       );
@@ -150,9 +150,9 @@ class _Bullet extends StatelessWidget {
             Expanded(
               child: Text(
                 text,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: AppTheme.textSubOn(context),
                   height: 1.6,
                 ),
               ),

@@ -185,9 +185,9 @@ class _DayCard extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(children: [
-              Text(dayName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isToday ? Colors.white : AppTheme.textPrimary)),
+              Text(dayName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isToday ? Colors.white : AppTheme.textOn(context))),
               const Spacer(),
-              Text(dayDate, style: TextStyle(color: isToday ? Colors.white70 : AppTheme.textSecondary, fontSize: 13)),
+              Text(dayDate, style: TextStyle(color: isToday ? Colors.white70 : AppTheme.textSubOn(context), fontSize: 13)),
               if (isToday) ...[const SizedBox(width: 8), Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
@@ -235,7 +235,7 @@ class _MealSlot extends StatelessWidget {
       child: Row(children: [
         Icon(_icon, size: 18, color: AppTheme.primary),
         const SizedBox(width: 8),
-        SizedBox(width: 90, child: Text(mealType, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary))),
+        SizedBox(width: 90, child: Text(mealType, style: TextStyle(fontSize: 13, color: AppTheme.textSubOn(context)))),
         Expanded(
           child: meal == null
               ? GestureDetector(
@@ -267,7 +267,7 @@ class _MealSlot extends StatelessWidget {
                       Expanded(child: Text(meal!['title'] as String, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
                       if (onRemove != null) GestureDetector(
                         onTap: onRemove,
-                        child: const Icon(Icons.close, size: 16, color: AppTheme.textSecondary),
+                        child: Icon(Icons.close, size: 16, color: AppTheme.textSubOn(context)),
                       ),
                     ]),
                   ),

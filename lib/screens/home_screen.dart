@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -41,6 +42,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   bool _hasError = false;
   int _favCount = 0;
+  List<Recipe> _allRecipes = [];
+  List<Recipe> _recentRecipes = [];
+  List<Recipe> _favoriteRecipes = [];
+  double _avgRating = 0.0;
   int _bottomNavIndex = 0;
 
   @override
@@ -52,16 +57,31 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _hasError = false; });
     try {
-      final cats    = await _db.getCustomCategories();
+      final cats = await _db.getCustomCategories();
+      final all  = await _db.getAllRecipes();
       final recipes = _selectedCategory == 'Semua'
-          ? await _db.getAllRecipes()
+          ? all
           : await _db.getByCategory(_selectedCategory);
-      final all     = await _db.getAllRecipes();
+
+      final favorites = all.where((r) => r.isFavorite).toList();
+      final recent    = (List<Recipe>.from(all)
+            ..sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0)))
+          .take(5)
+          .toList();
+      final rated = all.where((r) => r.userRating > 0).toList();
+      final avg   = rated.isEmpty
+          ? 0.0
+          : rated.map((r) => r.userRating).reduce((a, b) => a + b) / rated.length;
+
       if (mounted) {
         setState(() {
           _customCategories = cats;
-          _all = recipes;
-          _favCount = all.where((r) => r.isFavorite).length;
+          _allRecipes       = all;
+          _all              = recipes;
+          _favCount         = favorites.length;
+          _recentRecipes    = recent;
+          _favoriteRecipes  = favorites;
+          _avgRating        = avg;
           _applyFilters();
           _loading = false;
         });
@@ -214,127 +234,113 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildGreetingHeader(),
-          _buildSearchBar(),
-          _buildQuickStats(),
-          _buildCategories(),
-          if (_hasActiveFilter) _buildActiveFilterChips(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              children: [
-                Text(
-                  _selectedCategory == 'Semua' ? 'Semua Resep' : _selectedCategory,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _buildGreetingHeader()),
+            SliverToBoxAdapter(child: _buildSearchBar()),
+            SliverToBoxAdapter(child: _buildQuickStats()),
+            if (!_loading && _recentRecipes.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildCarousel(
+                  title: 'Terakhir Ditambahkan',
+                  icon: Icons.access_time_outlined,
+                  recipes: _recentRecipes,
                 ),
-                const SizedBox(width: 8),
-                if (!_loading)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
+              ),
+            if (!_loading && _favoriteRecipes.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildCarousel(
+                  title: 'Favorit Kamu',
+                  icon: Icons.favorite_outline,
+                  iconColor: Colors.red,
+                  recipes: _favoriteRecipes,
+                  onViewAll: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                  ).then((_) => _load()),
+                ),
+              ),
+            SliverToBoxAdapter(child: _buildCategories()),
+            if (_hasActiveFilter) SliverToBoxAdapter(child: _buildActiveFilterChips()),
+            SliverToBoxAdapter(child: _buildSectionHeader()),
+            if (_hasError)
+              SliverFillRemaining(
+                child: ErrorView(message: 'Gagal memuat resep.\nCoba lagi.', onRetry: _load),
+              )
+            else if (_loading)
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (_, __) => const ShimmerCard(),
+                  childCount: 4,
+                ),
+              )
+            else if (_filtered.isEmpty)
+              SliverFillRemaining(
+                child: EmptyView(
+                  icon: Icons.no_food,
+                  title: 'Tidak Ada Resep',
+                  subtitle: _hasActiveFilter
+                      ? 'Coba ubah filter atau kategori'
+                      : 'Belum ada resep.\nTambahkan resep pertamamu!',
+                  actionLabel: _hasActiveFilter ? null : 'Tambah Resep',
+                  onAction: _hasActiveFilter
+                      ? null
+                      : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
+                          ).then((_) => _load()),
+                ),
+              )
+            else
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => Dismissible(
+                    key: Key('recipe_${_filtered[i].id}'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                          color: Colors.red, borderRadius: BorderRadius.circular(16)),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      child: const Icon(Icons.delete, color: Colors.white),
                     ),
-                    child: Text(
-                      '${_filtered.length}',
-                      style: const TextStyle(
-                          color: AppTheme.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold),
+                    confirmDismiss: (_) async => showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Hapus Resep?'),
+                        content: Text('Hapus "${_filtered[i].title}"?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Batal'),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Hapus'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    onDismissed: (_) => _deleteWithUndo(_filtered[i]),
+                    child: RecipeCard(
+                      recipe: _filtered[i],
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => DetailScreen(recipe: _filtered[i])),
+                      ).then((_) => _load()),
+                      onFavorite: () => _toggleFavorite(_filtered[i]),
                     ),
                   ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _hasError
-                ? ErrorView(
-                    message: 'Gagal memuat resep.\nCoba lagi.',
-                    onRetry: _load)
-                : _loading
-                    ? const ShimmerList(count: 3)
-                    : _filtered.isEmpty
-                        ? EmptyView(
-                            icon: Icons.no_food,
-                            title: 'Tidak Ada Resep',
-                            subtitle: _hasActiveFilter
-                                ? 'Coba ubah filter atau kategori'
-                                : 'Belum ada resep.\nTambahkan resep pertamamu!',
-                            actionLabel:
-                                _hasActiveFilter ? null : 'Tambah Resep',
-                            onAction: _hasActiveFilter
-                                ? null
-                                : () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              const AddRecipeScreen()),
-                                    ).then((_) => _load()),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.only(bottom: 80),
-                              itemCount: _filtered.length,
-                              itemBuilder: (_, i) => Dismissible(
-                                key: Key('recipe_${_filtered[i].id}'),
-                                direction: DismissDirection.endToStart,
-                                background: Container(
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      borderRadius: BorderRadius.circular(16)),
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  child: const Icon(Icons.delete,
-                                      color: Colors.white),
-                                ),
-                                confirmDismiss: (_) async {
-                                  return await showDialog<bool>(
-                                    context: context,
-                                    builder: (_) => AlertDialog(
-                                      title: const Text('Hapus Resep?'),
-                                      content: Text(
-                                          'Hapus "${_filtered[i].title}"?'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context, false),
-                                          child: const Text('Batal'),
-                                        ),
-                                        ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.red),
-                                          onPressed: () =>
-                                              Navigator.pop(context, true),
-                                          child: const Text('Hapus'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                                onDismissed: (_) =>
-                                    _deleteWithUndo(_filtered[i]),
-                                child: RecipeCard(
-                                  recipe: _filtered[i],
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            DetailScreen(recipe: _filtered[i])),
-                                  ).then((_) => _load()),
-                                  onFavorite: () =>
-                                      _toggleFavorite(_filtered[i]),
-                                ),
-                              ),
-                            ),
-                          ),
-          ),
-        ],
+                  childCount: _filtered.length,
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 96)),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(
@@ -351,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: _onBottomNavTap,
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppTheme.primary,
-        unselectedItemColor: AppTheme.textSecondary,
+        unselectedItemColor: AppTheme.textSubOn(context),
         items: const [
           BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
@@ -455,12 +461,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         child: Row(children: [
-          const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
+          Icon(Icons.search, color: AppTheme.textSubOn(context), size: 20),
           const SizedBox(width: 10),
           Text(
             'Cari resep, bahan, atau kategori...',
             style: TextStyle(
-                color: AppTheme.textSecondary.withValues(alpha: 0.8),
+                color: AppTheme.textSubOn(context).withValues(alpha: 0.8),
                 fontSize: 14),
           ),
         ]),
@@ -476,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(children: [
         _StatCard(
           icon: Icons.menu_book_outlined,
-          value: _loading ? '-' : '${_all.length}',
+          value: _loading ? '-' : '${_allRecipes.length}',
           label: 'Total Resep',
           color: AppTheme.primary,
         ),
@@ -489,10 +495,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(width: 12),
         _StatCard(
-          icon: Icons.emoji_food_beverage_outlined,
-          value: _loading ? '-' : '${_allCategories.length - 1}',
-          label: 'Kategori',
-          color: Colors.orange,
+          icon: Icons.star_outline,
+          value: _loading
+              ? '-'
+              : _avgRating == 0.0
+                  ? '-'
+                  : _avgRating.toStringAsFixed(1),
+          label: 'Avg Rating',
+          color: Colors.amber,
         ),
       ]),
     );
@@ -637,6 +647,97 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Section Header ────────────────────────────────────────────────────────
+
+  Widget _buildSectionHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Row(children: [
+        Text(
+          _selectedCategory == 'Semua' ? 'Semua Resep' : _selectedCategory,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textOn(context),
+          ),
+        ),
+        const SizedBox(width: 8),
+        if (!_loading)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '${_filtered.length}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  // ── Carousel ──────────────────────────────────────────────────────────────
+
+  Widget _buildCarousel({
+    required String title,
+    required IconData icon,
+    required List<Recipe> recipes,
+    Color? iconColor,
+    VoidCallback? onViewAll,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Icon(icon, size: 18, color: iconColor ?? AppTheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textOn(context),
+              ),
+            ),
+            const Spacer(),
+            if (onViewAll != null)
+              GestureDetector(
+                onTap: onViewAll,
+                child: const Text(
+                  'Lihat Semua',
+                  style: TextStyle(fontSize: 13, color: AppTheme.primary),
+                ),
+              ),
+          ]),
+        ),
+        SizedBox(
+          height: 180,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: recipes.length,
+            itemBuilder: (_, i) => _CarouselCard(
+              recipe: recipes[i],
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => DetailScreen(recipe: recipes[i])),
+              ).then((_) => _load()),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showNotificationPanel(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -719,8 +820,8 @@ class _StatCard extends StatelessWidget {
                   color: color)),
           const SizedBox(height: 2),
           Text(label,
-              style: const TextStyle(
-                  fontSize: 11, color: AppTheme.textSecondary),
+              style: TextStyle(
+                  fontSize: 11, color: AppTheme.textSubOn(context)),
               textAlign: TextAlign.center),
         ]),
       ),
@@ -759,8 +860,8 @@ class _NotifTile extends StatelessWidget {
         Text(body, style: const TextStyle(fontSize: 13)),
         const SizedBox(height: 4),
         Text(time,
-            style: const TextStyle(
-                fontSize: 11, color: AppTheme.textSecondary)),
+            style: TextStyle(
+                fontSize: 11, color: AppTheme.textSubOn(context))),
       ]),
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -941,6 +1042,116 @@ class _DrawerItem extends StatelessWidget {
   }
 }
 
+// ── Carousel Card ─────────────────────────────────────────────────────────────
+
+class _CarouselCard extends StatelessWidget {
+  final Recipe recipe;
+  final VoidCallback onTap;
+  const _CarouselCard({required this.recipe, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 140,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: AppTheme.cardOn(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.borderOn(context)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
+              child: SizedBox(
+                height: 90,
+                width: double.infinity,
+                child: _buildImage(context),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textOn(context),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    const Icon(Icons.star, size: 11, color: Colors.amber),
+                    const SizedBox(width: 2),
+                    Text(
+                      recipe.userRating > 0
+                          ? recipe.userRating.toStringAsFixed(1)
+                          : recipe.rating.toStringAsFixed(1),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.textSubOn(context)),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.timer_outlined,
+                        size: 11, color: AppTheme.textSubOn(context)),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${recipe.cookingTime}m',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.textSubOn(context)),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImage(BuildContext context) {
+    if (recipe.imagePath != null) {
+      final file = File(recipe.imagePath!);
+      if (file.existsSync()) {
+        return Image.file(file, fit: BoxFit.cover, width: double.infinity);
+      }
+    }
+    if (recipe.imageUrl.isNotEmpty) {
+      return Image.network(
+        recipe.imageUrl,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        errorBuilder: (_, __, ___) => _placeholder(context),
+      );
+    }
+    return _placeholder(context);
+  }
+
+  Widget _placeholder(BuildContext context) => Container(
+        color: AppTheme.surfaceOn(context),
+        child: const Center(
+            child: Icon(Icons.restaurant, color: AppTheme.primary, size: 28)),
+      );
+}
+
 // ── Sort & Filter Bottom Sheet ────────────────────────────────────────────────
 
 class _SortFilterSheet extends StatefulWidget {
@@ -1069,15 +1280,15 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
               ),
               Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
+                  children: [
                     Text('15 mnt',
                         style: TextStyle(
                             fontSize: 12,
-                            color: AppTheme.textSecondary)),
+                            color: AppTheme.textSubOn(context))),
                     Text('180 mnt+',
                         style: TextStyle(
                             fontSize: 12,
-                            color: AppTheme.textSecondary)),
+                            color: AppTheme.textSubOn(context))),
                   ]),
               const SizedBox(height: 24),
               ElevatedButton(

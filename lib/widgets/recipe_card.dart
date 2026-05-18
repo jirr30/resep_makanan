@@ -29,7 +29,7 @@ class RecipeCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: _buildImage(recipe),
+                  child: _buildImage(recipe, context),
                 ),
                 Positioned(
                   top: 8,
@@ -75,14 +75,14 @@ class RecipeCard extends StatelessWidget {
                 children: [
                   Text(
                     recipe.title,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textOn(context)),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     recipe.description,
-                    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    style: TextStyle(fontSize: 13, color: AppTheme.textSubOn(context)),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -117,7 +117,7 @@ class RecipeCard extends StatelessWidget {
   }
 }
 
-Widget _buildImage(Recipe recipe) {
+Widget _buildImage(Recipe recipe, BuildContext context) {
   const placeholder = SizedBox(
     height: 180,
     width: double.infinity,
@@ -148,7 +148,7 @@ Widget _buildImage(Recipe recipe) {
         return SizedBox(
           height: 180,
           child: ColoredBox(
-            color: Colors.grey.shade200,
+            color: AppTheme.surfaceOn(context),
             child: const Center(child: CircularProgressIndicator()),
           ),
         );
@@ -169,16 +169,16 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.bgLight,
+        color: AppTheme.surfaceOn(context),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDFE6E9)),
+        border: Border.all(color: AppTheme.borderOn(context)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: AppTheme.textSecondary),
+          Icon(icon, size: 12, color: AppTheme.textSubOn(context)),
           const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+          Text(label, style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
         ],
       ),
     );

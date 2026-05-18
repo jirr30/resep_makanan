@@ -20,6 +20,25 @@ class AppTheme {
   static const Color textSecondaryDark = Color(0xFFB2BEC3);
   static const Color borderDark     = Color(0xFF3D3D3D);
 
+  // ── Context-aware color helpers ─────────────────────────────────────────────
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
+  static Color textOn(BuildContext context) =>
+      isDark(context) ? textPrimaryDark : textPrimary;
+
+  static Color textSubOn(BuildContext context) =>
+      isDark(context) ? textSecondaryDark : textSecondary;
+
+  static Color surfaceOn(BuildContext context) =>
+      isDark(context) ? surfaceDark : bgLight;
+
+  static Color cardOn(BuildContext context) =>
+      isDark(context) ? cardDark : cardLight;
+
+  static Color borderOn(BuildContext context) =>
+      isDark(context) ? borderDark : borderLight;
+
   static ThemeData get lightTheme => _build(Brightness.light);
   static ThemeData get darkTheme  => _build(Brightness.dark);
 

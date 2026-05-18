@@ -27,7 +27,7 @@ class ErrorView extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: AppTheme.textSecondary,
+                color: AppTheme.textSubOn(context),
                 height: 1.5,
               ),
             ),
@@ -85,7 +85,7 @@ class EmptyView extends StatelessWidget {
               subtitle,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppTheme.textSecondary,
+                color: AppTheme.textSubOn(context),
                 height: 1.5,
               ),
             ),
