@@ -138,7 +138,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _category,
+              initialValue: _category,
               decoration: const InputDecoration(labelText: 'Kategori', prefixIcon: Icon(Icons.category)),
               items: AppConstants.categories.skip(1).map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
               onChanged: (v) => setState(() => _category = v!),
@@ -161,7 +161,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
             ]),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _difficulty,
+              initialValue: _difficulty,
               decoration: const InputDecoration(labelText: 'Tingkat Kesulitan', prefixIcon: Icon(Icons.bar_chart)),
               items: AppConstants.difficulties.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
               onChanged: (v) => setState(() => _difficulty = v!),

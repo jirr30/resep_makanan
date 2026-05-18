@@ -144,7 +144,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: AppConstants.categories.skip(1).contains(_category) ? _category : AppConstants.categories[1],
+              initialValue: AppConstants.categories.skip(1).contains(_category) ? _category : AppConstants.categories[1],
               decoration: const InputDecoration(labelText: 'Kategori', prefixIcon: Icon(Icons.category)),
               items: AppConstants.categories.skip(1).map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
               onChanged: (v) => setState(() => _category = v!),
@@ -157,7 +157,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
             ]),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _difficulty,
+              initialValue: _difficulty,
               decoration: const InputDecoration(labelText: 'Kesulitan', prefixIcon: Icon(Icons.bar_chart)),
               items: AppConstants.difficulties.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
               onChanged: (v) => setState(() => _difficulty = v!),
