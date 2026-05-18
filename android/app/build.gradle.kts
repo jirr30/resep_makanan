@@ -31,7 +31,7 @@ android {
 
     defaultConfig {
         applicationId = "com.resepku.resep_makanan"
-        minSdk = 21
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
