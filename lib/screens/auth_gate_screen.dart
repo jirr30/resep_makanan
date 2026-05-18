@@ -99,15 +99,18 @@ class AuthGateScreen extends StatelessWidget {
                     onPressed: auth.loading
                         ? null
                         : () async {
-                            final success =
-                                await context.read<AuthProvider>().signInWithGoogle();
+                            final provider = context.read<AuthProvider>();
+                            final success = await provider.signInWithGoogle();
                             if (!context.mounted) return;
                             if (success) {
                               _goHome(context);
                             } else {
+                              final msg = provider.error ?? 'Login gagal. Coba lagi.';
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Login gagal. Coba lagi.')),
+                                SnackBar(
+                                  content: Text(msg),
+                                  duration: const Duration(seconds: 5),
+                                ),
                               );
                             }
                           },

@@ -8,10 +8,12 @@ class AuthProvider extends ChangeNotifier {
   late final StreamSubscription<User?> _authSub;
   User? _user;
   bool _loading = false;
+  String? _error;
 
   User? get user => _user;
   bool get isLoggedIn => _user != null;
   bool get loading => _loading;
+  String? get error => _error;
 
   AuthProvider() {
     _authSub = FirebaseAuth.instance.authStateChanges().listen((u) {
@@ -28,10 +30,14 @@ class AuthProvider extends ChangeNotifier {
 
   Future<bool> signInWithGoogle() async {
     _loading = true;
+    _error = null;
     notifyListeners();
     try {
       _user = await _authService.signInWithGoogle();
       return _user != null;
+    } catch (e) {
+      _error = e.toString();
+      return false;
     } finally {
       _loading = false;
       notifyListeners();
