@@ -86,6 +86,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   }
 
   Future<void> _submitRating(double rating) async {
+    if (_isOwner || _currentUserId == null) return;
     setState(() => _ratingLoading = true);
     try {
       await _fs.rateRecipe(widget.recipe.id, rating);
@@ -246,14 +247,19 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(fit: StackFit.expand, children: [
-          Image.network(
-            widget.recipe.imageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              color: AppTheme.primary.withValues(alpha: 0.3),
-              child: const Icon(Icons.restaurant, size: 80, color: Colors.white54),
-            ),
-          ),
+          widget.recipe.imageUrl.isNotEmpty
+              ? Image.network(
+                  widget.recipe.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: AppTheme.primary.withValues(alpha: 0.3),
+                    child: const Icon(Icons.restaurant, size: 80, color: Colors.white54),
+                  ),
+                )
+              : Container(
+                  color: AppTheme.primary.withValues(alpha: 0.3),
+                  child: const Icon(Icons.restaurant, size: 80, color: Colors.white54),
+                ),
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(

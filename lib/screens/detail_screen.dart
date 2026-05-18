@@ -63,17 +63,17 @@ class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderSt
 
   Future<void> _toggleFavorite() async {
     await _db.toggleFavorite(_recipe.id!, !_recipe.isFavorite);
+    if (!mounted) return;
     setState(() => _recipe = _recipe.copyWith(isFavorite: !_recipe.isFavorite));
   }
 
   Future<void> _rateRecipe(double rating) async {
     await _db.updateUserRating(_recipe.id!, rating);
+    if (!mounted) return;
     setState(() => _recipe = _recipe.copyWith(userRating: rating));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Rating $rating bintang disimpan!'), backgroundColor: AppTheme.primary),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Rating $rating bintang disimpan!'), backgroundColor: AppTheme.primary),
+    );
   }
 
   void _shareRecipe() {
