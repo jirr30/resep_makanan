@@ -136,12 +136,14 @@ jobs:
       # Buat file key.properties untuk Gradle
       - name: Buat key.properties
         run: |
-          cat > android/key.properties << EOF
+          cat > android/key.properties <<EOF
           storePassword=${{ secrets.STORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
           keyAlias=${{ secrets.KEY_ALIAS }}
           storeFile=resepku-release.jks
           EOF
+          # Hapus indentasi agar Gradle bisa parsing
+          sed -i 's/^[[:space:]]*//' android/key.properties
 
       # Hitung version code dari build number
       - name: Set version dari tag
@@ -162,6 +164,7 @@ jobs:
       - name: Build App Bundle (AAB)
         run: |
           flutter build appbundle --release \
+            --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
             --build-name=${{ steps.version.outputs.version_name }} \
             --build-number=${{ steps.version.outputs.build_number }}
 
@@ -169,6 +172,7 @@ jobs:
       - name: Build APK Release
         run: |
           flutter build apk --release \
+            --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
             --build-name=${{ steps.version.outputs.version_name }} \
             --build-number=${{ steps.version.outputs.build_number }}
 
@@ -176,6 +180,7 @@ jobs:
       - name: Build APK Split per ABI
         run: |
           flutter build apk --release --split-per-abi \
+            --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
             --build-name=${{ steps.version.outputs.version_name }} \
             --build-number=${{ steps.version.outputs.build_number }}
 
