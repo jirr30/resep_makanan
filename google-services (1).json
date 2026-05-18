@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "675950922875",
+    "firebase_url": "https://luay-ismi-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "luay-ismi",
+    "storage_bucket": "luay-ismi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:675950922875:android:e900e4e784c96afbfa66de",
+        "android_client_info": {
+          "package_name": "com.resepku.resep_makanan"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC13bQo6aIeJjWcP3gz-smZ6-IXppjHm_k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
