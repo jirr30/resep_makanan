@@ -19,7 +19,6 @@ class FirestoreService {
       'steps': recipe.steps,
       'cookingTime': recipe.cookingTime,
       'servings': recipe.servings,
-      'rating': recipe.rating,
       'difficulty': recipe.difficulty,
       'calories': recipe.calories,
       'protein': recipe.protein,
@@ -30,6 +29,8 @@ class FirestoreService {
       'authorPhoto': user.photoURL ?? '',
       'publishedAt': FieldValue.serverTimestamp(),
       'likes': 0,
+      'averageRating': 0.0,
+      'ratingCount': 0,
     });
   }
 
@@ -63,6 +64,67 @@ class FirestoreService {
     return doc.exists;
   }
 
+  /// Mengembalikan rating yang sudah diberikan user saat ini, atau 0.0 jika belum.
+  Future<double> getUserRating(String recipeId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return 0.0;
+    final doc = await _recipes
+        .doc(recipeId)
+        .collection('ratings')
+        .doc(user.uid)
+        .get();
+    if (!doc.exists) return 0.0;
+    return (doc.data()?['rating'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  /// Menyimpan / memperbarui rating user, lalu menghitung ulang rata-rata
+  /// secara atomik menggunakan Firestore transaction.
+  Future<void> rateRecipe(String recipeId, double newRating) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Harus login untuk memberi rating');
+
+    final recipeRef = _recipes.doc(recipeId);
+    final ratingRef = recipeRef.collection('ratings').doc(user.uid);
+
+    await _db.runTransaction((tx) async {
+      final oldRatingDoc = await tx.get(ratingRef);
+      final recipeDoc   = await tx.get(recipeRef);
+
+      final recipeData    = recipeDoc.data() as Map<String, dynamic>?;
+      final oldRatingData = oldRatingDoc.exists ? oldRatingDoc.data() : null;
+      final oldRating = (oldRatingData?['rating'] as num?)?.toDouble();
+
+      final currentCount = (recipeData?['ratingCount'] as num?)?.toInt() ?? 0;
+      final currentAvg   = (recipeData?['averageRating'] as num?)?.toDouble() ?? 0.0;
+
+      int newCount;
+      double newAvg;
+
+      if (oldRating == null) {
+        // Rating pertama dari user ini
+        newCount = currentCount + 1;
+        newAvg   = currentCount == 0
+            ? newRating
+            : ((currentAvg * currentCount) + newRating) / newCount;
+      } else {
+        // User memperbarui rating-nya
+        newCount = currentCount > 0 ? currentCount : 1;
+        newAvg   = newCount <= 1
+            ? newRating
+            : ((currentAvg * currentCount) - oldRating + newRating) / newCount;
+      }
+
+      tx.set(ratingRef, {
+        'rating':    newRating,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      tx.update(recipeRef, {
+        'averageRating': newAvg,
+        'ratingCount':   newCount,
+      });
+    });
+  }
+
   Future<List<CommunityRecipe>> getMyRecipes() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return [];
@@ -88,7 +150,8 @@ class CommunityRecipe {
   final List<String> steps;
   final int cookingTime;
   final int servings;
-  final double rating;
+  final double averageRating;
+  final int ratingCount;
   final String difficulty;
   final int calories;
   final double protein;
@@ -110,7 +173,8 @@ class CommunityRecipe {
     required this.steps,
     required this.cookingTime,
     required this.servings,
-    required this.rating,
+    required this.averageRating,
+    required this.ratingCount,
     required this.difficulty,
     required this.calories,
     required this.protein,
@@ -126,44 +190,48 @@ class CommunityRecipe {
   factory CommunityRecipe.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
     return CommunityRecipe(
-      id: doc.id,
-      title: d['title'] as String? ?? '',
-      category: d['category'] as String? ?? '',
+      id:          doc.id,
+      title:       d['title']       as String? ?? '',
+      category:    d['category']    as String? ?? '',
       description: d['description'] as String? ?? '',
-      imageUrl: d['imageUrl'] as String? ?? '',
+      imageUrl:    d['imageUrl']    as String? ?? '',
       ingredients: List<String>.from(d['ingredients'] ?? []),
-      steps: List<String>.from(d['steps'] ?? []),
+      steps:       List<String>.from(d['steps']       ?? []),
       cookingTime: d['cookingTime'] as int? ?? 0,
-      servings: d['servings'] as int? ?? 1,
-      rating: (d['rating'] as num?)?.toDouble() ?? 0,
-      difficulty: d['difficulty'] as String? ?? '',
-      calories: d['calories'] as int? ?? 0,
-      protein: (d['protein'] as num?)?.toDouble() ?? 0,
-      carbs: (d['carbs'] as num?)?.toDouble() ?? 0,
-      fat: (d['fat'] as num?)?.toDouble() ?? 0,
-      authorId: d['authorId'] as String? ?? '',
-      authorName: d['authorName'] as String? ?? 'Anonim',
+      servings:    d['servings']    as int? ?? 1,
+      // Backward-compatible: baca averageRating, fallback ke rating lama
+      averageRating: (d['averageRating'] as num?)?.toDouble()
+          ?? (d['rating'] as num?)?.toDouble()
+          ?? 0.0,
+      ratingCount: d['ratingCount'] as int? ?? 0,
+      difficulty:  d['difficulty']  as String? ?? '',
+      calories:    d['calories']    as int? ?? 0,
+      protein:     (d['protein'] as num?)?.toDouble() ?? 0,
+      carbs:       (d['carbs']   as num?)?.toDouble() ?? 0,
+      fat:         (d['fat']     as num?)?.toDouble() ?? 0,
+      authorId:    d['authorId']    as String? ?? '',
+      authorName:  d['authorName']  as String? ?? 'Anonim',
       authorPhoto: d['authorPhoto'] as String? ?? '',
       publishedAt: (d['publishedAt'] as Timestamp?)?.toDate(),
-      likes: d['likes'] as int? ?? 0,
+      likes:       d['likes'] as int? ?? 0,
     );
   }
 
   Recipe toRecipe() => Recipe(
-    title: title,
-    category: category,
+    title:       title,
+    category:    category,
     description: description,
-    imageUrl: imageUrl,
+    imageUrl:    imageUrl,
     ingredients: ingredients,
-    steps: steps,
+    steps:       steps,
     cookingTime: cookingTime,
-    servings: servings,
-    rating: rating,
-    difficulty: difficulty,
-    isFavorite: false,
-    calories: calories,
-    protein: protein,
-    carbs: carbs,
-    fat: fat,
+    servings:    servings,
+    rating:      averageRating,
+    difficulty:  difficulty,
+    isFavorite:  false,
+    calories:    calories,
+    protein:     protein,
+    carbs:       carbs,
+    fat:         fat,
   );
 }

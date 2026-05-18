@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
+import 'login_screen.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final CommunityRecipe recipe;
@@ -19,10 +21,15 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   final _db = DatabaseService();
   late TabController _tabController;
 
-  bool _isLiked = false;
-  bool _likeLoading = false;
-  int _likes = 0;
-  bool _isSaving = false;
+  bool _isLiked       = false;
+  bool _likeLoading   = false;
+  int  _likes         = 0;
+  bool _isSaving      = false;
+
+  double _userRating    = 0.0;
+  bool   _ratingLoading = false;
+  double _averageRating = 0.0;
+  int    _ratingCount   = 0;
 
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
   bool get _isOwner => _currentUserId != null && _currentUserId == widget.recipe.authorId;
@@ -30,9 +37,12 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _likes = widget.recipe.likes;
+    _tabController  = TabController(length: 3, vsync: this);
+    _likes          = widget.recipe.likes;
+    _averageRating  = widget.recipe.averageRating;
+    _ratingCount    = widget.recipe.ratingCount;
     _loadLikeStatus();
+    _loadUserRating();
   }
 
   @override
@@ -45,6 +55,12 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     if (_currentUserId == null) return;
     final liked = await _fs.isLiked(widget.recipe.id);
     if (mounted) setState(() => _isLiked = liked);
+  }
+
+  Future<void> _loadUserRating() async {
+    if (_currentUserId == null || _isOwner) return;
+    final rating = await _fs.getUserRating(widget.recipe.id);
+    if (mounted) setState(() => _userRating = rating);
   }
 
   Future<void> _toggleLike() async {
@@ -61,11 +77,54 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       if (mounted) {
         setState(() {
           _isLiked = newLiked;
-          _likes += newLiked ? 1 : -1;
+          _likes  += newLiked ? 1 : -1;
         });
       }
     } finally {
       if (mounted) setState(() => _likeLoading = false);
+    }
+  }
+
+  Future<void> _submitRating(double rating) async {
+    setState(() => _ratingLoading = true);
+    try {
+      await _fs.rateRecipe(widget.recipe.id, rating);
+
+      // Hitung rata-rata lokal sementara sambil Firestore update
+      final prevUserRating = _userRating;
+      double newAvg;
+      int newCount;
+      if (prevUserRating == 0.0) {
+        newCount = _ratingCount + 1;
+        newAvg   = _ratingCount == 0
+            ? rating
+            : ((_averageRating * _ratingCount) + rating) / newCount;
+      } else {
+        newCount = _ratingCount > 0 ? _ratingCount : 1;
+        newAvg   = newCount <= 1
+            ? rating
+            : ((_averageRating * _ratingCount) - prevUserRating + rating) / newCount;
+      }
+
+      if (mounted) {
+        setState(() {
+          _userRating    = rating;
+          _averageRating = newAvg;
+          _ratingCount   = newCount;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Rating ${rating.toStringAsFixed(0)} bintang tersimpan!'),
+          backgroundColor: AppTheme.primary,
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal menyimpan rating. Coba lagi.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _ratingLoading = false);
     }
   }
 
@@ -129,11 +188,13 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
         slivers: [
           _buildAppBar(),
           SliverToBoxAdapter(child: _buildAuthorInfo()),
+          SliverToBoxAdapter(child: _buildRatingSection()),
           SliverToBoxAdapter(
             child: TabBar(
               controller: _tabController,
               labelColor: AppTheme.primary,
               indicatorColor: AppTheme.primary,
+              unselectedLabelColor: AppTheme.textSecondary,
               tabs: const [
                 Tab(text: 'Bahan'),
                 Tab(text: 'Cara Masak'),
@@ -163,18 +224,19 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       pinned: true,
       backgroundColor: AppTheme.primary,
       actions: [
-        // Like button — semua orang bisa like
         _likeLoading
             ? const Padding(
                 padding: EdgeInsets.all(12),
                 child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
               )
             : IconButton(
-                icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border, color: _isLiked ? Colors.red[200] : Colors.white),
+                icon: Icon(
+                  _isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: _isLiked ? Colors.red[200] : Colors.white,
+                ),
                 onPressed: _toggleLike,
                 tooltip: _isLiked ? 'Batal like' : 'Like resep ini',
               ),
-        // Hapus — hanya owner
         if (_isOwner)
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.white),
@@ -202,32 +264,44 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
             ),
           ),
           Positioned(
-            bottom: 16,
-            left: 16,
-            right: 16,
+            bottom: 16, left: 16, right: 16,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(20)),
-                child: Text(widget.recipe.category, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                child: Text(widget.recipe.category,
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 8),
               Text(widget.recipe.title,
-                style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 4, color: Colors.black45)])),
+                  style: const TextStyle(
+                    color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold,
+                    shadows: [Shadow(blurRadius: 4, color: Colors.black45)],
+                  )),
               const SizedBox(height: 6),
               Row(children: [
                 const Icon(Icons.timer, color: Colors.white70, size: 14),
                 const SizedBox(width: 4),
-                Text('${widget.recipe.cookingTime} mnt', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                Text('${widget.recipe.cookingTime} mnt',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
                 const SizedBox(width: 12),
                 const Icon(Icons.people, color: Colors.white70, size: 14),
                 const SizedBox(width: 4),
-                Text('${widget.recipe.servings} porsi', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                Text('${widget.recipe.servings} porsi',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
                 const SizedBox(width: 12),
                 const Icon(Icons.bar_chart, color: Colors.white70, size: 14),
                 const SizedBox(width: 4),
-                Text(widget.recipe.difficulty, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                Text(widget.recipe.difficulty,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
                 const Spacer(),
+                const Icon(Icons.star, color: Colors.amber, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  _ratingCount > 0 ? _averageRating.toStringAsFixed(1) : '-',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(width: 10),
                 const Icon(Icons.favorite, color: Colors.red, size: 14),
                 const SizedBox(width: 4),
                 Text('$_likes', style: const TextStyle(color: Colors.white70, fontSize: 13)),
@@ -241,7 +315,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
 
   Widget _buildAuthorInfo() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(children: [
         CircleAvatar(
           radius: 20,
@@ -256,13 +330,15 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text(widget.recipe.authorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(widget.recipe.authorName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             if (_isOwner) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
-                child: const Text('Kamu', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                child: const Text('Kamu',
+                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
               ),
             ],
           ]),
@@ -276,6 +352,101 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     );
   }
 
+  Widget _buildRatingSection() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Tampilan rata-rata rating komunitas
+        Row(children: [
+          Row(children: List.generate(5, (i) => Icon(
+            i < _averageRating.round() ? Icons.star : Icons.star_border,
+            color: Colors.amber,
+            size: 20,
+          ))),
+          const SizedBox(width: 8),
+          Text(
+            _ratingCount > 0
+                ? '${_averageRating.toStringAsFixed(1)} dari 5'
+                : 'Belum ada rating',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          if (_ratingCount > 0) ...[
+            const SizedBox(width: 6),
+            Text('($_ratingCount ulasan)',
+                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          ],
+        ]),
+        const SizedBox(height: 14),
+        const Divider(height: 1),
+        const SizedBox(height: 14),
+
+        // Aksi rating user
+        if (_isOwner)
+          Row(children: const [
+            Icon(Icons.info_outline, size: 16, color: AppTheme.textSecondary),
+            SizedBox(width: 6),
+            Text('Kamu tidak bisa menilai resep sendiri',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          ])
+        else if (_currentUserId == null)
+          GestureDetector(
+            onTap: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()));
+              if (mounted) _loadUserRating();
+            },
+            child: Row(children: [
+              const Icon(Icons.login, size: 16, color: AppTheme.primary),
+              const SizedBox(width: 6),
+              const Text('Login untuk memberi rating',
+                  style: TextStyle(color: AppTheme.primary, fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+            ]),
+          )
+        else
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              _userRating > 0 ? 'Rating kamu:' : 'Beri rating resep ini:',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            _ratingLoading
+                ? const SizedBox(
+                    height: 36,
+                    child: Row(children: [
+                      SizedBox(width: 24, height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
+                      SizedBox(width: 12),
+                      Text('Menyimpan...', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                    ]),
+                  )
+                : RatingBar.builder(
+                    initialRating: _userRating,
+                    minRating: 1,
+                    itemSize: 36,
+                    glowColor: Colors.amber.withValues(alpha: 0.3),
+                    itemBuilder: (_, __) => const Icon(Icons.star, color: Colors.amber),
+                    onRatingUpdate: _submitRating,
+                  ),
+            if (_userRating > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Kamu memberi ${_userRating.toStringAsFixed(0)} bintang',
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                ),
+              ),
+          ]),
+      ]),
+    );
+  }
+
   Widget _buildIngredients() {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
@@ -284,9 +455,13 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(children: [
-          Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle)),
+          Container(
+            width: 8, height: 8,
+            decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
+          ),
           const SizedBox(width: 12),
-          Expanded(child: Text(widget.recipe.ingredients[i], style: const TextStyle(fontSize: 15))),
+          Expanded(child: Text(widget.recipe.ingredients[i],
+              style: const TextStyle(fontSize: 15))),
         ]),
       ),
     );
@@ -302,12 +477,14 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
           CircleAvatar(
             radius: 16,
             backgroundColor: AppTheme.primary,
-            child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+            child: Text('${i + 1}',
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(width: 12),
           Expanded(child: Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(widget.recipe.steps[i], style: const TextStyle(fontSize: 15, height: 1.5)),
+            child: Text(widget.recipe.steps[i],
+                style: const TextStyle(fontSize: 15, height: 1.5)),
           )),
         ]),
       ),
@@ -315,24 +492,31 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   }
 
   Widget _buildNutrition() {
-    if (widget.recipe.calories == 0 && widget.recipe.protein == 0 && widget.recipe.carbs == 0 && widget.recipe.fat == 0) {
+    final noData = widget.recipe.calories == 0 && widget.recipe.protein == 0
+        && widget.recipe.carbs == 0 && widget.recipe.fat == 0;
+    if (noData) {
       return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.info_outline, size: 48, color: AppTheme.textSecondary),
         SizedBox(height: 12),
-        Text('Informasi nutrisi tidak tersedia', style: TextStyle(color: AppTheme.textSecondary)),
+        Text('Informasi nutrisi tidak tersedia',
+            style: TextStyle(color: AppTheme.textSecondary)),
       ]));
     }
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(children: [
-        _NutritionCard('Kalori', '${widget.recipe.calories}', 'kkal', Icons.local_fire_department, Colors.orange),
+        _NutritionCard('Kalori', '${widget.recipe.calories}', 'kkal',
+            Icons.local_fire_department, Colors.orange),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: _NutritionCard('Protein', widget.recipe.protein.toString(), 'g', Icons.egg, Colors.blue)),
+          Expanded(child: _NutritionCard('Protein',
+              widget.recipe.protein.toStringAsFixed(1), 'g', Icons.egg, Colors.blue)),
           const SizedBox(width: 12),
-          Expanded(child: _NutritionCard('Karbo', widget.recipe.carbs.toString(), 'g', Icons.grain, Colors.amber)),
+          Expanded(child: _NutritionCard('Karbo',
+              widget.recipe.carbs.toStringAsFixed(1), 'g', Icons.grain, Colors.amber)),
           const SizedBox(width: 12),
-          Expanded(child: _NutritionCard('Lemak', widget.recipe.fat.toString(), 'g', Icons.opacity, Colors.red)),
+          Expanded(child: _NutritionCard('Lemak',
+              widget.recipe.fat.toStringAsFixed(1), 'g', Icons.opacity, Colors.red)),
         ]),
       ]),
     );
@@ -346,7 +530,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
           child: OutlinedButton.icon(
             onPressed: _deleteFromCommunity,
             icon: const Icon(Icons.delete_outline, color: Colors.red),
-            label: const Text('Hapus dari Komunitas', style: TextStyle(color: Colors.red)),
+            label: const Text('Hapus dari Komunitas',
+                style: TextStyle(color: Colors.red)),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               side: const BorderSide(color: Colors.red),
@@ -361,24 +546,25 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Row(children: [
-          // Like button
           Container(
             decoration: BoxDecoration(
-              border: Border.all(color: _isLiked ? Colors.red : AppTheme.primary.withValues(alpha: 0.4)),
+              border: Border.all(
+                  color: _isLiked ? Colors.red : AppTheme.primary.withValues(alpha: 0.4)),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border, color: _isLiked ? Colors.red : AppTheme.primary),
+              icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: _isLiked ? Colors.red : AppTheme.primary),
               onPressed: _likeLoading ? null : _toggleLike,
             ),
           ),
           const SizedBox(width: 12),
-          // Simpan ke koleksi
           Expanded(
             child: ElevatedButton.icon(
               onPressed: _isSaving ? null : _saveToLocal,
               icon: _isSaving
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  ? const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.bookmark_add_outlined),
               label: Text(_isSaving ? 'Menyimpan...' : 'Simpan ke Koleksi'),
               style: ElevatedButton.styleFrom(

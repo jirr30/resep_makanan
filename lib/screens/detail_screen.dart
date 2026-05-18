@@ -353,7 +353,7 @@ Dibagikan dari aplikasi ResepKu
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Beri Rating Kamu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Text('Rating Pribadi', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 8),
           Row(children: [
             RatingBar.builder(
