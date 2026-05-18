@@ -19,7 +19,7 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'resep_makanan.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, _) async {
         await _createAllTables(db);
         await _insertSampleData(db);
@@ -34,6 +34,9 @@ class DatabaseService {
           await db.execute('ALTER TABLE recipes ADD COLUMN fat REAL NOT NULL DEFAULT 0');
           await db.execute('''CREATE TABLE IF NOT EXISTS custom_categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)''');
+        }
+        if (oldVersion < 4) {
+          await db.execute('ALTER TABLE recipes ADD COLUMN firestoreId TEXT');
         }
         if (oldVersion < 3) {
           await db.execute('''CREATE TABLE IF NOT EXISTS shopping_list (
@@ -59,7 +62,8 @@ class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL, category TEXT NOT NULL,
         description TEXT NOT NULL, imageUrl TEXT NOT NULL,
-        imagePath TEXT, ingredients TEXT NOT NULL, steps TEXT NOT NULL,
+        imagePath TEXT, firestoreId TEXT,
+        ingredients TEXT NOT NULL, steps TEXT NOT NULL,
         cookingTime INTEGER NOT NULL, servings INTEGER NOT NULL,
         rating REAL NOT NULL DEFAULT 0, userRating REAL NOT NULL DEFAULT 0,
         difficulty TEXT NOT NULL, isFavorite INTEGER NOT NULL DEFAULT 0,

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,7 +11,6 @@ import '../services/nutrition_service.dart';
 import '../utils/app_theme.dart';
 import 'edit_recipe_screen.dart';
 import 'cooking_mode_screen.dart';
-import 'login_screen.dart';
 import 'shopping_list_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -121,13 +119,36 @@ Dibagikan dari aplikasi ResepKu
   }
 
   Future<void> _shareToCommuntiy() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
-      if (FirebaseAuth.instance.currentUser == null) return;
+    // Jika sudah pernah dibagikan, tanya apakah ingin bagikan ulang
+    if (_recipe.firestoreId != null) {
+      final again = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Sudah Dibagikan'),
+          content: const Text(
+              'Resep ini sudah ada di komunitas. Ingin membagikan ulang sebagai resep baru?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Batal')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Bagikan Lagi')),
+          ],
+        ),
+      );
+      if (again != true) return;
     }
+
     try {
-      await FirestoreService().publishRecipe(_recipe);
+      final docId = await FirestoreService().publishRecipe(_recipe);
+      if (!mounted) return;
+      if (docId != null) {
+        // Simpan firestoreId ke SQLite supaya status "sudah dibagikan" tersimpan
+        final updated = _recipe.copyWith(firestoreId: docId);
+        await _db.updateRecipe(updated);
+        if (mounted) setState(() => _recipe = updated);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Resep berhasil dibagikan ke komunitas!'),
@@ -227,11 +248,26 @@ Dibagikan dari aplikasi ResepKu
                   if (v == 'share_community') _shareToCommuntiy();
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'share_community', child: Row(children: [
-                    Icon(Icons.people, color: AppTheme.primary, size: 18),
-                    SizedBox(width: 8),
-                    Text('Bagikan ke Komunitas'),
-                  ])),
+                  PopupMenuItem(
+                    value: 'share_community',
+                    child: Row(children: [
+                      Icon(
+                        _recipe.firestoreId != null
+                            ? Icons.check_circle
+                            : Icons.people,
+                        color: _recipe.firestoreId != null
+                            ? Colors.green
+                            : AppTheme.primary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _recipe.firestoreId != null
+                            ? 'Sudah Dibagikan'
+                            : 'Bagikan ke Komunitas',
+                      ),
+                    ]),
+                  ),
                   const PopupMenuItem(value: 'delete', child: Row(children: [
                     Icon(Icons.delete, color: Colors.red, size: 18),
                     SizedBox(width: 8),

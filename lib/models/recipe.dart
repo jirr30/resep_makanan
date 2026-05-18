@@ -1,5 +1,6 @@
 class Recipe {
   final int? id;
+  final String? firestoreId; // non-null setelah dipublikasikan ke komunitas
   final String title;
   final String category;
   final String description;
@@ -21,6 +22,7 @@ class Recipe {
 
   Recipe({
     this.id,
+    this.firestoreId,
     required this.title,
     required this.category,
     required this.description,
@@ -43,6 +45,7 @@ class Recipe {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'firestoreId': firestoreId,
       'title': title,
       'category': category,
       'description': description,
@@ -66,6 +69,7 @@ class Recipe {
   factory Recipe.fromMap(Map<String, dynamic> map) {
     return Recipe(
       id: map['id'],
+      firestoreId: map['firestoreId'] as String?,
       title: map['title'],
       category: map['category'],
       description: map['description'],
@@ -87,6 +91,7 @@ class Recipe {
   }
 
   Recipe copyWith({
+    String? firestoreId,
     bool? isFavorite,
     double? userRating,
     String? imagePath,
@@ -97,6 +102,7 @@ class Recipe {
   }) {
     return Recipe(
       id: id,
+      firestoreId: firestoreId ?? this.firestoreId,
       title: title,
       category: category,
       description: description,

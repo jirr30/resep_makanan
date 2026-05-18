@@ -22,16 +22,17 @@ class FirestoreService {
 
   // ─── Publish ─────────────────────────────────────────────────────────────────
 
-  Future<void> publishRecipe(Recipe recipe) async {
+  // Returns Firestore doc ID, or null if user not logged in.
+  Future<String?> publishRecipe(Recipe recipe) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) return null;
 
     String imageUrl = recipe.imageUrl;
     if (recipe.imagePath != null && File(recipe.imagePath!).existsSync()) {
       imageUrl = await _uploadLocalImage(recipe.imagePath!, user.uid);
     }
 
-    await _recipes.add({
+    final ref = await _recipes.add({
       'title':       recipe.title,
       'category':    recipe.category,
       'description': recipe.description,
@@ -54,6 +55,7 @@ class FirestoreService {
       'ratingCount':   0,
       'commentCount':  0,
     });
+    return ref.id;
   }
 
   // ─── Pagination ───────────────────────────────────────────────────────────────
