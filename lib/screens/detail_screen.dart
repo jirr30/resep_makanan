@@ -236,44 +236,17 @@ Dibagikan dari aplikasi ResepKu
             pinned: true,
             backgroundColor: AppTheme.primary,
             actions: [
-              IconButton(icon: const Icon(Icons.edit), onPressed: _openEdit),
+              IconButton(icon: const Icon(Icons.edit), onPressed: _openEdit, tooltip: 'Edit'),
               IconButton(
                 icon: Icon(_recipe.isFavorite ? Icons.favorite : Icons.favorite_border),
                 onPressed: _toggleFavorite,
+                tooltip: _recipe.isFavorite ? 'Hapus favorit' : 'Tambah favorit',
               ),
-              IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe),
-              PopupMenuButton<String>(
-                onSelected: (v) {
-                  if (v == 'delete') _deleteRecipe();
-                  if (v == 'share_community') _shareToCommuntiy();
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'share_community',
-                    child: Row(children: [
-                      Icon(
-                        _recipe.firestoreId != null
-                            ? Icons.check_circle
-                            : Icons.people,
-                        color: _recipe.firestoreId != null
-                            ? Colors.green
-                            : AppTheme.primary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _recipe.firestoreId != null
-                            ? 'Sudah Dibagikan'
-                            : 'Bagikan ke Komunitas',
-                      ),
-                    ]),
-                  ),
-                  const PopupMenuItem(value: 'delete', child: Row(children: [
-                    Icon(Icons.delete, color: Colors.red, size: 18),
-                    SizedBox(width: 8),
-                    Text('Hapus Resep', style: TextStyle(color: Colors.red)),
-                  ])),
-                ],
+              IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe, tooltip: 'Bagikan'),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                onPressed: _deleteRecipe,
+                tooltip: 'Hapus resep',
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
@@ -347,6 +320,8 @@ Dibagikan dari aplikasi ResepKu
                           label: const Text('Tambah ke Daftar Belanja'),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      _buildShareCommunityButton(),
                       const SizedBox(height: 16),
                       _buildRatingSection(),
                     ],
@@ -374,6 +349,27 @@ Dibagikan dari aplikasi ResepKu
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildShareCommunityButton() {
+    final isPublished = _recipe.firestoreId != null;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _shareToCommuntiy,
+        icon: Icon(
+          isPublished ? Icons.check_circle : Icons.people_alt_outlined,
+          color: isPublished ? Colors.green : AppTheme.primary,
+        ),
+        label: Text(
+          isPublished ? 'Sudah Dibagikan ke Komunitas' : 'Bagikan ke Komunitas',
+          style: TextStyle(color: isPublished ? Colors.green : AppTheme.primary),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: isPublished ? Colors.green : AppTheme.primary),
+        ),
       ),
     );
   }
