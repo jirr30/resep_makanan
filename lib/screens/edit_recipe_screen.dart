@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/recipe.dart';
 import '../services/database_service.dart';
+import '../services/nutrition_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 
@@ -36,6 +37,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
   late List<TextEditingController> _stepCtrls;
   String? _localImagePath;
   bool _saving = false;
+  bool _calculatingNutrition = false;
 
   @override
   void initState() {
@@ -73,6 +75,47 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
     final name = 'recipe_${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}';
     final saved = await File(picked.path).copy('${dir.path}/$name');
     setState(() => _localImagePath = saved.path);
+  }
+
+  Future<void> _calculateNutrition() async {
+    final ingredients = _ingredientCtrls
+        .map((c) => c.text.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (ingredients.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Isi bahan-bahan terlebih dahulu')),
+      );
+      return;
+    }
+    setState(() => _calculatingNutrition = true);
+    try {
+      final servings = int.tryParse(_servingsCtrl.text) ?? widget.recipe.servings;
+      final result = await NutritionService().estimateFromIngredients(
+        ingredients: ingredients,
+        servings: servings,
+      );
+      if (!mounted) return;
+      setState(() {
+        _calCtrl.text     = result.calories.toString();
+        _proteinCtrl.text = result.protein.toStringAsFixed(1);
+        _carbsCtrl.text   = result.carbs.toStringAsFixed(1);
+        _fatCtrl.text     = result.fat.toStringAsFixed(1);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nutrisi berhasil dihitung!'),
+          backgroundColor: AppTheme.primary,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal menghitung nutrisi: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _calculatingNutrition = false);
+    }
   }
 
   Future<void> _save() async {
@@ -149,7 +192,23 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
               onChanged: (v) => setState(() => _difficulty = v!),
             ),
             const SizedBox(height: 20),
-            _section('Informasi Nutrisi (per porsi)'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _section('Informasi Nutrisi (per porsi)'),
+                _calculatingNutrition
+                    ? const SizedBox(
+                        width: 24, height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                      )
+                    : TextButton.icon(
+                        onPressed: _calculateNutrition,
+                        icon: const Icon(Icons.auto_awesome, size: 16, color: AppTheme.primary),
+                        label: const Text('Hitung Otomatis', style: TextStyle(color: AppTheme.primary, fontSize: 13)),
+                      ),
+              ],
+            ),
             Row(children: [
               Expanded(child: _field(_calCtrl, 'Kalori (kkal)', Icons.local_fire_department, numeric: true)),
               const SizedBox(width: 12),
