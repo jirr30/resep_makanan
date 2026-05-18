@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
+import '../utils/constants.dart';
 import 'community_detail_screen.dart';
 import 'login_screen.dart';
+import 'profile_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -41,7 +43,8 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: GestureDetector(
-                onTap: () => _showProfileMenu(context, auth),
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ProfileScreen())),
                 child: CircleAvatar(
                   radius: 16,
                   backgroundImage: auth.user?.photoURL != null
@@ -56,7 +59,8 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
             )
           else
             TextButton.icon(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())),
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen())),
               icon: const Icon(Icons.login, size: 18),
               label: const Text('Login'),
             ),
@@ -75,85 +79,277 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
           _AllRecipesTab(fs: _fs),
           auth.isLoggedIn
               ? _MyRecipesTab(fs: _fs)
-              : _LoginPrompt(onLogin: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()))),
+              : _LoginPrompt(onLogin: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()))),
         ],
       ),
     );
   }
+}
 
-  void _showProfileMenu(BuildContext context, AuthProvider auth) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          CircleAvatar(
-            radius: 36,
-            backgroundImage: auth.user?.photoURL != null ? NetworkImage(auth.user!.photoURL!) : null,
-            backgroundColor: AppTheme.primary,
-            child: auth.user?.photoURL == null ? const Icon(Icons.person, size: 32, color: Colors.white) : null,
-          ),
-          const SizedBox(height: 12),
-          Text(auth.user?.displayName ?? 'Pengguna', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(auth.user?.email ?? '', style: const TextStyle(color: AppTheme.textSecondary)),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                Navigator.pop(context);
-                await auth.signOut();
-              },
-              icon: const Icon(Icons.logout, color: Colors.red),
-              label: const Text('Keluar', style: TextStyle(color: Colors.red)),
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+// ─── All Recipes Tab (Search + Pagination) ────────────────────────────────────
+
+class _AllRecipesTab extends StatefulWidget {
+  final FirestoreService fs;
+  const _AllRecipesTab({required this.fs});
+
+  @override
+  State<_AllRecipesTab> createState() => _AllRecipesTabState();
+}
+
+class _AllRecipesTabState extends State<_AllRecipesTab> {
+  final _scrollCtrl    = ScrollController();
+  final _searchCtrl    = TextEditingController();
+
+  List<CommunityRecipe> _recipes     = [];
+  List<CommunityRecipe> _searchPool  = [];  // semua resep untuk search
+  String  _searchQuery    = '';
+  String  _selectedCat    = 'Semua';
+  bool    _isSearching    = false;
+  bool    _loading        = true;
+  bool    _loadingMore    = false;
+  bool    _hasMore        = true;
+  bool    _searchLoading  = false;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitial();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_isSearching) return;
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadInitial() async {
+    setState(() { _loading = true; _error = null; _recipes = []; _hasMore = true; });
+    try {
+      final result = await widget.fs.getRecipesPaged();
+      if (mounted) {
+        setState(() {
+          _recipes = result.recipes;
+          _hasMore = result.hasMore;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _error = e; _loading = false; });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _recipes.isEmpty) return;
+    setState(() => _loadingMore = true);
+    try {
+      // Ambil lastDoc dari Firestore untuk cursor
+      final lastSnap = await FirestoreService().getRecipesPaged(
+        startAfter: await _getLastDoc(),
+      );
+      if (mounted) {
+        setState(() {
+          _recipes.addAll(lastSnap.recipes);
+          _hasMore    = lastSnap.hasMore;
+          _loadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  // Ambil DocumentSnapshot terakhir dari Firestore
+  Future<dynamic> _getLastDoc() async {
+    final snap = await widget.fs.getLastDocSnapshot(_recipes.last.id);
+    return snap;
+  }
+
+  Future<void> _activateSearch(String query) async {
+    setState(() { _isSearching = true; _searchQuery = query; });
+    if (_searchPool.isEmpty) {
+      setState(() => _searchLoading = true);
+      try {
+        final all = await widget.fs.getAllRecipesForSearch();
+        if (mounted) setState(() { _searchPool = all; _searchLoading = false; });
+      } catch (_) {
+        if (mounted) setState(() => _searchLoading = false);
+      }
+    }
+  }
+
+  void _clearSearch() {
+    _searchCtrl.clear();
+    setState(() {
+      _isSearching = false;
+      _searchQuery  = '';
+      _selectedCat  = 'Semua';
+    });
+  }
+
+  List<CommunityRecipe> get _displayList {
+    final pool = _isSearching ? _searchPool : _recipes;
+    return pool.where((r) {
+      final matchCat   = _selectedCat == 'Semua' || r.category == _selectedCat;
+      final matchQuery = _searchQuery.isEmpty ||
+          r.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          r.authorName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          r.description.toLowerCase().contains(_searchQuery.toLowerCase());
+      return matchCat && matchQuery;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      _buildSearchBar(),
+      _buildCategoryChips(),
+      Expanded(child: _buildBody()),
+    ]);
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: SearchBar(
+        controller: _searchCtrl,
+        hintText: 'Cari resep atau nama chef...',
+        leading: const Icon(Icons.search, color: AppTheme.textSecondary),
+        trailing: [
+          if (_searchQuery.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: _clearSearch,
             ),
+        ],
+        onChanged: (v) {
+          final q = v.trim();
+          if (q.isNotEmpty) {
+            _activateSearch(q);
+          } else {
+            _clearSearch();
+          }
+        },
+        elevation: const WidgetStatePropertyAll(0),
+        backgroundColor: WidgetStatePropertyAll(
+          Theme.of(context).brightness == Brightness.dark
+              ? AppTheme.surfaceDark
+              : AppTheme.bgLight,
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppTheme.borderLight),
           ),
-        ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryChips() {
+    final cats = ['Semua', ...AppConstants.categories.where((c) => c != 'Semua')];
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        scrollDirection: Axis.horizontal,
+        itemCount: cats.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final cat      = cats[i];
+          final selected = _selectedCat == cat;
+          return FilterChip(
+            label: Text(cat, style: TextStyle(
+              fontSize: 12,
+              color: selected ? Colors.white : AppTheme.textSecondary,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            )),
+            selected: selected,
+            onSelected: (_) {
+              setState(() => _selectedCat = cat);
+              if (cat != 'Semua' && !_isSearching) _activateSearch('');
+              if (cat == 'Semua' && _searchQuery.isEmpty) _clearSearch();
+            },
+            backgroundColor: Colors.transparent,
+            selectedColor: AppTheme.primary,
+            checkmarkColor: Colors.white,
+            side: BorderSide(color: selected ? AppTheme.primary : AppTheme.borderLight),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+    }
+    if (_error != null) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.wifi_off, size: 48, color: AppTheme.textSecondary),
+        const SizedBox(height: 12),
+        const Text('Gagal memuat resep', style: TextStyle(color: AppTheme.textSecondary)),
+        const SizedBox(height: 12),
+        ElevatedButton(onPressed: _loadInitial, child: const Text('Coba Lagi')),
+      ]));
+    }
+    if (_searchLoading) {
+      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        CircularProgressIndicator(color: AppTheme.primary),
+        SizedBox(height: 12),
+        Text('Memuat semua resep untuk pencarian...', style: TextStyle(color: AppTheme.textSecondary)),
+      ]));
+    }
+
+    final list = _displayList;
+    if (list.isEmpty) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.search_off, size: 64, color: AppTheme.textSecondary),
+        const SizedBox(height: 16),
+        Text(
+          _isSearching ? 'Tidak ada resep untuk "$_searchQuery"' : 'Belum ada resep dari komunitas',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+          textAlign: TextAlign.center,
+        ),
+        if (_isSearching) ...[
+          const SizedBox(height: 8),
+          TextButton(onPressed: _clearSearch, child: const Text('Hapus pencarian')),
+        ],
+      ]));
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadInitial,
+      child: ListView.builder(
+        controller: _isSearching ? null : _scrollCtrl,
+        padding: const EdgeInsets.only(bottom: 80),
+        itemCount: list.length + (_loadingMore ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i == list.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+            );
+          }
+          return _CommunityCard(recipe: list[i], fs: widget.fs);
+        },
       ),
     );
   }
 }
 
-class _AllRecipesTab extends StatelessWidget {
-  final FirestoreService fs;
-  const _AllRecipesTab({required this.fs});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<CommunityRecipe>>(
-      stream: fs.getCommunityRecipes(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
-        }
-        if (snap.hasError) {
-          return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.wifi_off, size: 48, color: AppTheme.textSecondary),
-            const SizedBox(height: 12),
-            Text('Gagal memuat: ${snap.error}', style: const TextStyle(color: AppTheme.textSecondary)),
-          ]));
-        }
-        final recipes = snap.data ?? [];
-        if (recipes.isEmpty) {
-          return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.people_outline, size: 64, color: AppTheme.textSecondary),
-            SizedBox(height: 16),
-            Text('Belum ada resep dari komunitas', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
-            SizedBox(height: 8),
-            Text('Jadilah yang pertama berbagi!', style: TextStyle(color: AppTheme.textSecondary)),
-          ]));
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 80),
-          itemCount: recipes.length,
-          itemBuilder: (_, i) => _CommunityCard(recipe: recipes[i], fs: fs),
-        );
-      },
-    );
-  }
-}
+// ─── My Recipes Tab ──────────────────────────────────────────────────────────
 
 class _MyRecipesTab extends StatefulWidget {
   final FirestoreService fs;
@@ -186,7 +382,8 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
       return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSecondary),
         SizedBox(height: 16),
-        Text('Belum ada resep yang kamu bagikan', style: TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
+        Text('Belum ada resep yang kamu bagikan',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
       ]));
     }
     return RefreshIndicator(
@@ -208,13 +405,20 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
   }
 }
 
+// ─── Community Card ──────────────────────────────────────────────────────────
+
 class _CommunityCard extends StatelessWidget {
   final CommunityRecipe recipe;
   final FirestoreService fs;
   final bool showDelete;
   final VoidCallback? onDelete;
 
-  const _CommunityCard({required this.recipe, required this.fs, this.showDelete = false, this.onDelete});
+  const _CommunityCard({
+    required this.recipe,
+    required this.fs,
+    this.showDelete = false,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -228,17 +432,13 @@ class _CommunityCard extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            child: Image.network(
-              recipe.imageUrl,
-              height: 160,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                height: 160,
-                color: AppTheme.primary.withValues(alpha: 0.15),
-                child: const Icon(Icons.restaurant, size: 48, color: AppTheme.primary),
-              ),
-            ),
+            child: recipe.imageUrl.isNotEmpty
+                ? Image.network(
+                    recipe.imageUrl,
+                    height: 160, width: double.infinity, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _imagePlaceholder(),
+                  )
+                : _imagePlaceholder(),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
@@ -246,13 +446,18 @@ class _CommunityCard extends StatelessWidget {
               Row(children: [
                 CircleAvatar(
                   radius: 14,
-                  backgroundImage: recipe.authorPhoto.isNotEmpty ? NetworkImage(recipe.authorPhoto) : null,
+                  backgroundImage: recipe.authorPhoto.isNotEmpty
+                      ? NetworkImage(recipe.authorPhoto)
+                      : null,
                   backgroundColor: AppTheme.primary,
-                  child: recipe.authorPhoto.isEmpty ? const Icon(Icons.person, size: 14, color: Colors.white) : null,
+                  child: recipe.authorPhoto.isEmpty
+                      ? const Icon(Icons.person, size: 14, color: Colors.white)
+                      : null,
                 ),
                 const SizedBox(width: 8),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(recipe.authorName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text(recipe.authorName,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                   if (recipe.publishedAt != null)
                     Text(DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
                         style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
@@ -266,7 +471,7 @@ class _CommunityCard extends StatelessWidget {
               ]),
               const SizedBox(height: 8),
               Text(recipe.title,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 4),
               Text(recipe.description,
@@ -282,7 +487,13 @@ class _CommunityCard extends StatelessWidget {
                 const Spacer(),
                 const Icon(Icons.favorite, size: 14, color: Colors.red),
                 const SizedBox(width: 4),
-                Text('${recipe.likes}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                Text('${recipe.likes}',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                const SizedBox(width: 10),
+                const Icon(Icons.comment_outlined, size: 14, color: AppTheme.textSecondary),
+                const SizedBox(width: 4),
+                Text('${recipe.commentCount}',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
               ]),
             ]),
           ),
@@ -290,6 +501,12 @@ class _CommunityCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _imagePlaceholder() => Container(
+    height: 160,
+    color: AppTheme.primary.withValues(alpha: 0.15),
+    child: const Center(child: Icon(Icons.restaurant, size: 48, color: AppTheme.primary)),
+  );
 }
 
 class _Chip extends StatelessWidget {
@@ -326,13 +543,15 @@ class _LoginPrompt extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.lock_outline, size: 64, color: AppTheme.textSecondary),
         const SizedBox(height: 16),
-        const Text('Login untuk melihat resep kamu', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
+        const Text('Login untuk melihat resep kamu',
+            style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
         const SizedBox(height: 24),
         ElevatedButton.icon(
           onPressed: onLogin,
           icon: const Icon(Icons.login),
           label: const Text('Login Sekarang'),
-          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
         ),
       ]),
     ));

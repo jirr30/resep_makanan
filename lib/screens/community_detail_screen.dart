@@ -37,7 +37,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController  = TabController(length: 3, vsync: this);
+    _tabController  = TabController(length: 4, vsync: this);
     _likes          = widget.recipe.likes;
     _averageRating  = widget.recipe.averageRating;
     _ratingCount    = widget.recipe.ratingCount;
@@ -196,10 +196,29 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               labelColor: AppTheme.primary,
               indicatorColor: AppTheme.primary,
               unselectedLabelColor: AppTheme.textSecondary,
-              tabs: const [
-                Tab(text: 'Bahan'),
-                Tab(text: 'Cara Masak'),
-                Tab(text: 'Nutrisi'),
+              tabs: [
+                const Tab(text: 'Bahan'),
+                const Tab(text: 'Cara Masak'),
+                const Tab(text: 'Nutrisi'),
+                Tab(
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Komentar'),
+                    if (widget.recipe.commentCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${widget.recipe.commentCount}',
+                          style: const TextStyle(fontSize: 10, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ),
               ],
             ),
           ),
@@ -210,6 +229,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 _buildIngredients(),
                 _buildSteps(),
                 _buildNutrition(),
+                _buildComments(),
               ],
             ),
           ),
@@ -528,6 +548,10 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     );
   }
 
+  Widget _buildComments() {
+    return _CommentsTab(recipeId: widget.recipe.id, fs: _fs);
+  }
+
   Widget _buildBottomBar() {
     if (_isOwner) {
       return SafeArea(
@@ -584,6 +608,257 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
         ]),
       ),
     );
+  }
+}
+
+class _CommentsTab extends StatefulWidget {
+  final String recipeId;
+  final FirestoreService fs;
+  const _CommentsTab({required this.recipeId, required this.fs});
+
+  @override
+  State<_CommentsTab> createState() => _CommentsTabState();
+}
+
+class _CommentsTabState extends State<_CommentsTab> {
+  final _textCtrl   = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  bool  _sending    = false;
+
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
+  @override
+  void dispose() {
+    _textCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _textCtrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    if (_uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Login dulu untuk berkomentar')),
+      );
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await widget.fs.addComment(widget.recipeId, text);
+      _textCtrl.clear();
+      if (mounted) {
+        // Scroll ke bawah setelah komentar dikirim
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollCtrl.hasClients) {
+            _scrollCtrl.animateTo(
+              _scrollCtrl.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal mengirim komentar. Coba lagi.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _delete(String commentId) async {
+    await widget.fs.deleteComment(widget.recipeId, commentId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Expanded(
+        child: StreamBuilder<List<RecipeComment>>(
+          stream: widget.fs.getComments(widget.recipeId),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+            }
+            final comments = snap.data ?? [];
+            if (comments.isEmpty) {
+              return const Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.chat_bubble_outline, size: 48, color: AppTheme.textSecondary),
+                  SizedBox(height: 12),
+                  Text('Belum ada komentar. Jadilah yang pertama!',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                      textAlign: TextAlign.center),
+                ]),
+              );
+            }
+            return ListView.separated(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              itemCount: comments.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (_, i) => _CommentBubble(
+                comment: comments[i],
+                isOwn: comments[i].userId == _uid,
+                onDelete: () => _delete(comments[i].id),
+              ),
+            );
+          },
+        ),
+      ),
+      const Divider(height: 1),
+      _buildInputBar(),
+    ]);
+  }
+
+  Widget _buildInputBar() {
+    if (_uid == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        child: const Text(
+          'Login untuk berkomentar',
+          style: TextStyle(color: AppTheme.textSecondary),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _textCtrl,
+              maxLines: null,
+              maxLength: 500,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'Tulis komentar...',
+                counterText: '',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppTheme.borderLight),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppTheme.borderLight),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                ),
+              ),
+              onSubmitted: (_) => _send(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _sending
+              ? const SizedBox(
+                  width: 40, height: 40,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.send_rounded, color: AppTheme.primary),
+                  onPressed: _send,
+                  tooltip: 'Kirim komentar',
+                ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _CommentBubble extends StatelessWidget {
+  final RecipeComment comment;
+  final bool isOwn;
+  final VoidCallback onDelete;
+  const _CommentBubble({required this.comment, required this.isOwn, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      CircleAvatar(
+        radius: 18,
+        backgroundImage: comment.userPhoto.isNotEmpty ? NetworkImage(comment.userPhoto) : null,
+        backgroundColor: AppTheme.primary,
+        child: comment.userPhoto.isEmpty
+            ? const Icon(Icons.person, size: 18, color: Colors.white)
+            : null,
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(
+              comment.userName,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            if (isOwn) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text('Kamu',
+                    style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+              ),
+            ],
+            const Spacer(),
+            if (comment.createdAt != null)
+              Text(
+                DateFormat('d MMM, HH:mm', 'id_ID').format(comment.createdAt!),
+                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              ),
+            if (isOwn)
+              GestureDetector(
+                onTap: () => _confirmDelete(context),
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isOwn
+                  ? AppTheme.primary.withValues(alpha: 0.08)
+                  : Theme.of(context).brightness == Brightness.dark
+                      ? AppTheme.surfaceDark
+                      : AppTheme.bgLight,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(comment.text, style: const TextStyle(fontSize: 14, height: 1.4)),
+          ),
+        ]),
+      ),
+    ]);
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hapus Komentar'),
+        content: const Text('Yakin ingin menghapus komentar ini?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) onDelete();
   }
 }
 

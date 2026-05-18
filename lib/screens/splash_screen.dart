@@ -1,6 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/app_theme.dart';
+import 'auth_gate_screen.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
 
@@ -32,14 +34,23 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final prefs = await SharedPreferences.getInstance();
     final done  = prefs.getBool('onboarding_done') ?? false;
 
-    // Increment open count for in-app review
     final opens = prefs.getInt('open_count') ?? 0;
     await prefs.setInt('open_count', opens + 1);
 
     if (!mounted) return;
+
+    final Widget destination;
+    if (!done) {
+      destination = const OnboardingScreen();
+    } else if (FirebaseAuth.instance.currentUser != null) {
+      destination = const HomeScreen();
+    } else {
+      destination = const AuthGateScreen();
+    }
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => done ? const HomeScreen() : const OnboardingScreen(),
+        pageBuilder: (_, __, ___) => destination,
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 400),

@@ -8,7 +8,7 @@ import '../providers/theme_provider.dart';
 import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
-import 'login_screen.dart';
+import 'auth_gate_screen.dart';
 import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -212,7 +212,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Masuk ke Komunitas'),
           subtitle: const Text('Login untuk berbagi dan menilai resep'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())),
+          onTap: () => Navigator.of(context).pushAndRemoveUntil(
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const AuthGateScreen(),
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 350),
+            ),
+            (_) => false,
+          ),
         ),
       ],
     );
@@ -235,6 +243,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (confirm == true && context.mounted) {
       await context.read<AuthProvider>().signOut();
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const AuthGateScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 350),
+          ),
+          (_) => false,
+        );
+      }
     }
   }
 

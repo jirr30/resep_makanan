@@ -41,7 +41,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: true,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: isDark ? cardDark : cardLight,
         elevation: isDark ? 0 : 2,
         shape: RoundedRectangleBorder(
@@ -97,7 +97,7 @@ class AppTheme {
         unselectedItemColor: isDark ? textSecondaryDark : textSecondary,
         elevation: 8,
       ),
-      tabBarTheme: TabBarTheme(
+      tabBarTheme: TabBarThemeData(
         labelColor: primary,
         unselectedLabelColor: isDark ? textSecondaryDark : textSecondary,
         indicatorColor: primary,
@@ -114,7 +114,7 @@ class AppTheme {
         labelStyle: TextStyle(color: isDark ? textPrimaryDark : textPrimary),
         side: BorderSide(color: isDark ? borderDark : borderLight),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: isDark ? cardDark : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),

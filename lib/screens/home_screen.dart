@@ -1,14 +1,19 @@
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/recipe.dart';
+import '../providers/auth_provider.dart';
 import '../services/database_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 import '../widgets/recipe_card.dart';
 import '../widgets/shimmer_card.dart';
 import '../widgets/error_view.dart';
+import 'auth_gate_screen.dart';
 import 'detail_screen.dart';
 import 'add_recipe_screen.dart';
 import 'favorites_screen.dart';
+import 'profile_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'shopping_list_screen.dart';
@@ -153,35 +158,35 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: _AppDrawer(onRefresh: _load),
       appBar: AppBar(
         title: const Text('ResepKu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
         actions: [
-          IconButton(icon: const Icon(Icons.search),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())).then((_) => _load())),
-          Stack(
-            children: [
-              IconButton(icon: const Icon(Icons.tune), onPressed: _showSortFilter, tooltip: 'Sort & Filter'),
-              if (_hasActiveFilter) Positioned(right: 8, top: 8, child: Container(
-                width: 8, height: 8,
-                decoration: const BoxDecoration(color: Colors.amber, shape: BoxShape.circle),
-              )),
-            ],
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const SearchScreen()))
+                .then((_) => _load()),
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              switch (v) {
-                case 'settings':   Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
-                case 'shopping':   Navigator.push(context, MaterialPageRoute(builder: (_) => const ShoppingListScreen()));
-                case 'planner':    Navigator.push(context, MaterialPageRoute(builder: (_) => const MealPlannerScreen()));
-                case 'community':  Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityScreen()));
-              }
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'community', child: Row(children: [Icon(Icons.people, size: 18), SizedBox(width: 8), Text('Komunitas')])),
-              const PopupMenuItem(value: 'planner',   child: Row(children: [Icon(Icons.calendar_month, size: 18), SizedBox(width: 8), Text('Meal Planner')])),
-              const PopupMenuItem(value: 'shopping',  child: Row(children: [Icon(Icons.shopping_cart, size: 18), SizedBox(width: 8), Text('Daftar Belanja')])),
-              const PopupMenuItem(value: 'settings',  child: Row(children: [Icon(Icons.settings, size: 18), SizedBox(width: 8), Text('Pengaturan')])),
-            ],
+          Stack(children: [
+            IconButton(
+                icon: const Icon(Icons.tune),
+                onPressed: _showSortFilter,
+                tooltip: 'Sort & Filter'),
+            if (_hasActiveFilter)
+              Positioned(
+                right: 8, top: 8,
+                child: Container(
+                  width: 8, height: 8,
+                  decoration: const BoxDecoration(
+                      color: Colors.amber, shape: BoxShape.circle),
+                ),
+              ),
+          ]),
+          IconButton(
+            icon: const Icon(Icons.notifications_none),
+            tooltip: 'Notifikasi',
+            onPressed: () => _showNotificationPanel(context),
           ),
         ],
       ),
@@ -384,6 +389,262 @@ class _HomeScreenState extends State<HomeScreen> {
       side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
       padding: EdgeInsets.zero,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  void _showNotificationPanel(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.85,
+        minChildSize: 0.35,
+        expand: false,
+        builder: (_, ctrl) => Column(children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 8),
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+                color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(children: [
+              Icon(Icons.notifications, color: AppTheme.primary),
+              SizedBox(width: 10),
+              Text('Notifikasi',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+          const Divider(),
+          Expanded(
+            child: ListView(controller: ctrl, children: const [
+              _NotifTile(
+                icon: Icons.restaurant_menu,
+                color: AppTheme.primary,
+                title: 'Selamat datang di ResepKu!',
+                body: 'Mulai tambahkan resep favoritmu dan bagikan ke komunitas.',
+                time: 'Baru saja',
+              ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Notification Tile ─────────────────────────────────────────────────────────
+
+class _NotifTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+  final String time;
+  const _NotifTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.body,
+    required this.time,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: color.withValues(alpha: 0.12),
+        child: Icon(icon, color: color, size: 22),
+      ),
+      title: Text(title,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+      subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(height: 2),
+        Text(body, style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 4),
+        Text(time,
+            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+      ]),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+    );
+  }
+}
+
+// ── App Drawer ────────────────────────────────────────────────────────────────
+
+class _AppDrawer extends StatelessWidget {
+  final VoidCallback onRefresh;
+  const _AppDrawer({required this.onRefresh});
+
+  void _go(BuildContext context, Widget screen, {bool refresh = false}) {
+    final nav = Navigator.of(context);
+    nav.pop(); // close drawer
+    nav.push(MaterialPageRoute(builder: (_) => screen))
+        .then((_) { if (refresh) onRefresh(); });
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    // Show dialog while drawer is still open, then act on result
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Keluar'),
+        content: const Text('Yakin ingin keluar dari akun?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Keluar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    final nav = Navigator.of(context);
+    nav.pop(); // close drawer
+    await context.read<AuthProvider>().signOut();
+    if (context.mounted) {
+      nav.pushAndRemoveUntil(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const AuthGateScreen(),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 350),
+        ),
+        (_) => false,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return Drawer(
+      child: SafeArea(
+        child: Column(children: [
+          // ── Header ──────────────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.primary, Color(0xFFFF9A6C)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              CircleAvatar(
+                radius: 36,
+                backgroundImage: user?.photoURL != null
+                    ? NetworkImage(user!.photoURL!)
+                    : null,
+                backgroundColor: Colors.white.withValues(alpha: 0.3),
+                child: user?.photoURL == null
+                    ? const Icon(Icons.person, size: 36, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                user?.displayName ?? 'Pengguna',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                user?.email ?? '',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ]),
+          ),
+
+          // ── Menu Items ───────────────────────────────────────────────────────
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                _DrawerItem(
+                  icon: Icons.person_outline,
+                  label: 'Profil Saya',
+                  onTap: () => _go(context, const ProfileScreen()),
+                ),
+                _DrawerItem(
+                  icon: Icons.people_outline,
+                  label: 'Komunitas',
+                  onTap: () => _go(context, const CommunityScreen()),
+                ),
+                _DrawerItem(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Meal Planner',
+                  onTap: () => _go(context, const MealPlannerScreen()),
+                ),
+                _DrawerItem(
+                  icon: Icons.shopping_cart_outlined,
+                  label: 'Daftar Belanja',
+                  onTap: () => _go(context, const ShoppingListScreen()),
+                ),
+                _DrawerItem(
+                  icon: Icons.favorite_outline,
+                  label: 'Favorit',
+                  onTap: () => _go(context, const FavoritesScreen(), refresh: true),
+                ),
+                const Divider(indent: 20, endIndent: 20),
+                _DrawerItem(
+                  icon: Icons.settings_outlined,
+                  label: 'Pengaturan',
+                  onTap: () => _go(context, const SettingsScreen()),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Keluar ───────────────────────────────────────────────────────────
+          const Divider(height: 1),
+          _DrawerItem(
+            icon: Icons.logout,
+            label: 'Keluar',
+            color: Colors.red,
+            onTap: () => _signOut(context),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.onSurface;
+    return ListTile(
+      leading: Icon(icon, color: c, size: 22),
+      title: Text(label,
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c)),
+      onTap: onTap,
+      horizontalTitleGap: 8,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
 }
