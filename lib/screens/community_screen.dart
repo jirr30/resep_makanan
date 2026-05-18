@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
+import 'add_recipe_screen.dart';
 import 'auth_gate_screen.dart';
 import 'community_detail_screen.dart';
 import 'profile_screen.dart';
@@ -389,12 +390,64 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
     if (_recipes.isEmpty) {
-      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSubOn(context)),
-        const SizedBox(height: 16),
-        Text('Belum ada resep yang kamu bagikan',
-            style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 15)),
-      ]));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.primary, Color(0xFFFF8C55)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: const Icon(Icons.restaurant_menu, size: 52, color: Colors.white),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Belum ada resep yang kamu bagikan',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textOn(context),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Bagikan resepmu ke komunitas dan\ninspirasikan chef lainnya!',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppTheme.textSubOn(context),
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
+              ).then((_) => _load()),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                'Bagikan Resep Kamu',
+                style: TextStyle(color: Colors.white, fontSize: 15),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ]),
+        ),
+      );
     }
     return RefreshIndicator(
       onRefresh: _load,

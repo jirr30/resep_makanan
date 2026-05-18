@@ -90,6 +90,30 @@ class FirestoreService {
     return snap.docs.map(CommunityRecipe.fromFirestore).toList();
   }
 
+  // Top N resep terpopuler berdasarkan likes — untuk dashboard
+  Future<List<CommunityRecipe>> getTrendingRecipes({int limit = 5}) async {
+    final snap = await _recipes
+        .orderBy('likes', descending: true)
+        .limit(limit)
+        .get();
+    return snap.docs.map(CommunityRecipe.fromFirestore).toList();
+  }
+
+  // Latest N resep komunitas — untuk dashboard
+  Future<List<CommunityRecipe>> getLatestCommunityRecipes({int limit = 5}) async {
+    final snap = await _recipes
+        .orderBy('publishedAt', descending: true)
+        .limit(limit)
+        .get();
+    return snap.docs.map(CommunityRecipe.fromFirestore).toList();
+  }
+
+  // Total resep di komunitas — untuk stat card
+  Future<int> getCommunityRecipeCount() async {
+    final snap = await _recipes.count().get();
+    return snap.count ?? 0;
+  }
+
   // ─── Like ─────────────────────────────────────────────────────────────────────
 
   Future<void> toggleLike(String docId, bool liked) async {

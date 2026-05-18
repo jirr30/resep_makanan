@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/recipe.dart';
 import '../providers/auth_provider.dart';
 import '../services/database_service.dart';
+import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 import '../widgets/recipe_card.dart';
@@ -19,6 +20,7 @@ import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'shopping_list_screen.dart';
 import 'meal_planner_screen.dart';
+import 'community_detail_screen.dart';
 import 'community_screen.dart';
 
 enum SortOption { newest, ratingDesc, timeAsc, nameAsc }
@@ -32,6 +34,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _db = DatabaseService();
+  final _fs = FirestoreService();
   List<Recipe> _all = [];
   List<Recipe> _filtered = [];
   List<String> _customCategories = [];
@@ -45,7 +48,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Recipe> _allRecipes = [];
   List<Recipe> _recentRecipes = [];
   List<Recipe> _favoriteRecipes = [];
-  double _avgRating = 0.0;
+  List<CommunityRecipe> _trendingCommunity = [];
+  List<CommunityRecipe> _latestCommunity = [];
+  int _communityCount = 0;
   int _bottomNavIndex = 0;
 
   @override
@@ -57,6 +62,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _hasError = false; });
     try {
+      // Mulai fetch Firestore & SQLite secara paralel
+      final trendingFuture = _fs.getTrendingRecipes()
+          .catchError((_) => <CommunityRecipe>[]);
+      final latestFuture = _fs.getLatestCommunityRecipes()
+          .catchError((_) => <CommunityRecipe>[]);
+      final countFuture = _fs.getCommunityRecipeCount()
+          .catchError((_) => 0);
+
       final cats = await _db.getCustomCategories();
       final all  = await _db.getAllRecipes();
       final recipes = _selectedCategory == 'Semua'
@@ -68,20 +81,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ..sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0)))
           .take(5)
           .toList();
-      final rated = all.where((r) => r.userRating > 0).toList();
-      final avg   = rated.isEmpty
-          ? 0.0
-          : rated.map((r) => r.userRating).reduce((a, b) => a + b) / rated.length;
+      // Tunggu hasil Firestore (sudah jalan paralel)
+      final trending = await trendingFuture;
+      final latest   = await latestFuture;
+      final count    = await countFuture;
 
       if (mounted) {
         setState(() {
-          _customCategories = cats;
-          _allRecipes       = all;
-          _all              = recipes;
-          _favCount         = favorites.length;
-          _recentRecipes    = recent;
-          _favoriteRecipes  = favorites;
-          _avgRating        = avg;
+          _customCategories  = cats;
+          _allRecipes        = all;
+          _all               = recipes;
+          _favCount          = favorites.length;
+          _recentRecipes     = recent;
+          _favoriteRecipes   = favorites;
+          _trendingCommunity = trending;
+          _latestCommunity   = latest;
+          _communityCount    = count;
           _applyFilters();
           _loading = false;
         });
@@ -241,6 +256,32 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(child: _buildGreetingHeader()),
             SliverToBoxAdapter(child: _buildSearchBar()),
             SliverToBoxAdapter(child: _buildQuickStats()),
+            if (!_loading && _trendingCommunity.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildCommunityCarousel(
+                  title: 'Populer di Komunitas',
+                  icon: Icons.local_fire_department,
+                  iconColor: Colors.orange,
+                  recipes: _trendingCommunity,
+                  onViewAll: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CommunityScreen()),
+                  ).then((_) => _load()),
+                ),
+              ),
+            if (!_loading && _latestCommunity.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildCommunityCarousel(
+                  title: 'Terbaru dari Komunitas',
+                  icon: Icons.public,
+                  iconColor: Colors.teal,
+                  recipes: _latestCommunity,
+                  onViewAll: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CommunityScreen()),
+                  ).then((_) => _load()),
+                ),
+              ),
             if (!_loading && _recentRecipes.isNotEmpty)
               SliverToBoxAdapter(
                 child: _buildCarousel(
@@ -495,14 +536,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(width: 12),
         _StatCard(
-          icon: Icons.star_outline,
-          value: _loading
-              ? '-'
-              : _avgRating == 0.0
-                  ? '-'
-                  : _avgRating.toStringAsFixed(1),
-          label: 'Avg Rating',
-          color: Colors.amber,
+          icon: Icons.public,
+          value: _loading ? '-' : '$_communityCount',
+          label: 'Komunitas',
+          color: Colors.teal,
         ),
       ]),
     );
@@ -644,6 +681,62 @@ class _HomeScreenState extends State<HomeScreen> {
       side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
       padding: EdgeInsets.zero,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  // ── Community Carousel ────────────────────────────────────────────────────
+
+  Widget _buildCommunityCarousel({
+    required String title,
+    required IconData icon,
+    required List<CommunityRecipe> recipes,
+    Color? iconColor,
+    VoidCallback? onViewAll,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Icon(icon, size: 18, color: iconColor ?? AppTheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textOn(context),
+              ),
+            ),
+            const Spacer(),
+            if (onViewAll != null)
+              GestureDetector(
+                onTap: onViewAll,
+                child: const Text(
+                  'Lihat Semua',
+                  style: TextStyle(fontSize: 13, color: AppTheme.primary),
+                ),
+              ),
+          ]),
+        ),
+        SizedBox(
+          height: 190,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: recipes.length,
+            itemBuilder: (_, i) => _CommunityCarouselCard(
+              recipe: recipes[i],
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => CommunityDetailScreen(recipe: recipes[i])),
+              ).then((_) => _load()),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1040,6 +1133,111 @@ class _DrawerItem extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
+}
+
+// ── Community Carousel Card ───────────────────────────────────────────────────
+
+class _CommunityCarouselCard extends StatelessWidget {
+  final CommunityRecipe recipe;
+  final VoidCallback onTap;
+  const _CommunityCarouselCard({required this.recipe, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 150,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: AppTheme.cardOn(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.borderOn(context)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
+              child: recipe.imageUrl.isNotEmpty
+                  ? Image.network(
+                      recipe.imageUrl,
+                      height: 95,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _placeholder(context),
+                    )
+                  : _placeholder(context),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textOn(context),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    recipe.authorName,
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: AppTheme.textSubOn(context)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    const Icon(Icons.favorite, size: 11, color: Colors.red),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${recipe.likes}',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.textSubOn(context)),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.star, size: 11, color: Colors.amber),
+                    const SizedBox(width: 2),
+                    Text(
+                      recipe.averageRating > 0
+                          ? recipe.averageRating.toStringAsFixed(1)
+                          : '-',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.textSubOn(context)),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(BuildContext context) => Container(
+        height: 95,
+        color: AppTheme.primary.withValues(alpha: 0.12),
+        child: const Center(
+            child: Icon(Icons.restaurant, color: AppTheme.primary, size: 28)),
+      );
 }
 
 // ── Carousel Card ─────────────────────────────────────────────────────────────
