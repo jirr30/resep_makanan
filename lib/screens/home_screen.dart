@@ -13,6 +13,7 @@ import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'shopping_list_screen.dart';
 import 'meal_planner_screen.dart';
+import 'community_screen.dart';
 
 enum SortOption { newest, ratingDesc, timeAsc, nameAsc }
 
@@ -169,15 +170,17 @@ class _HomeScreenState extends State<HomeScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               switch (v) {
-                case 'settings':  Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
-                case 'shopping':  Navigator.push(context, MaterialPageRoute(builder: (_) => const ShoppingListScreen()));
-                case 'planner':   Navigator.push(context, MaterialPageRoute(builder: (_) => const MealPlannerScreen()));
+                case 'settings':   Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                case 'shopping':   Navigator.push(context, MaterialPageRoute(builder: (_) => const ShoppingListScreen()));
+                case 'planner':    Navigator.push(context, MaterialPageRoute(builder: (_) => const MealPlannerScreen()));
+                case 'community':  Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityScreen()));
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'planner',  child: Row(children: [Icon(Icons.calendar_month, size: 18), SizedBox(width: 8), Text('Meal Planner')])),
-              const PopupMenuItem(value: 'shopping', child: Row(children: [Icon(Icons.shopping_cart, size: 18), SizedBox(width: 8), Text('Daftar Belanja')])),
-              const PopupMenuItem(value: 'settings', child: Row(children: [Icon(Icons.settings, size: 18), SizedBox(width: 8), Text('Pengaturan')])),
+              const PopupMenuItem(value: 'community', child: Row(children: [Icon(Icons.people, size: 18), SizedBox(width: 8), Text('Komunitas')])),
+              const PopupMenuItem(value: 'planner',   child: Row(children: [Icon(Icons.calendar_month, size: 18), SizedBox(width: 8), Text('Meal Planner')])),
+              const PopupMenuItem(value: 'shopping',  child: Row(children: [Icon(Icons.shopping_cart, size: 18), SizedBox(width: 8), Text('Daftar Belanja')])),
+              const PopupMenuItem(value: 'settings',  child: Row(children: [Icon(Icons.settings, size: 18), SizedBox(width: 8), Text('Pengaturan')])),
             ],
           ),
         ],

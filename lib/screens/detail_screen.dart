@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/recipe.dart';
 import '../services/database_service.dart';
+import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
 import 'edit_recipe_screen.dart';
 import 'cooking_mode_screen.dart';
+import 'login_screen.dart';
 import 'shopping_list_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -115,6 +118,27 @@ Dibagikan dari aplikasi ResepKu
     ));
   }
 
+  Future<void> _shareToCommuntiy() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+      if (FirebaseAuth.instance.currentUser == null) return;
+    }
+    try {
+      await FirestoreService().publishRecipe(_recipe);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Resep berhasil dibagikan ke komunitas!'),
+        backgroundColor: AppTheme.primary,
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal membagikan resep. Coba lagi.')),
+      );
+    }
+  }
+
   Future<void> _openEdit() async {
     final updated = await Navigator.push<Recipe>(
       context,
@@ -163,8 +187,16 @@ Dibagikan dari aplikasi ResepKu
               ),
               IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe),
               PopupMenuButton<String>(
-                onSelected: (v) { if (v == 'delete') _deleteRecipe(); },
+                onSelected: (v) {
+                  if (v == 'delete') _deleteRecipe();
+                  if (v == 'share_community') _shareToCommuntiy();
+                },
                 itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'share_community', child: Row(children: [
+                    Icon(Icons.people, color: AppTheme.primary, size: 18),
+                    SizedBox(width: 8),
+                    Text('Bagikan ke Komunitas'),
+                  ])),
                   const PopupMenuItem(value: 'delete', child: Row(children: [
                     Icon(Icons.delete, color: Colors.red, size: 18),
                     SizedBox(width: 8),
