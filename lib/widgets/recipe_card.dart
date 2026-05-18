@@ -145,7 +145,7 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.background,
+        color: AppTheme.bgLight,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFDFE6E9)),
       ),

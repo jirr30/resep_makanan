@@ -8,6 +8,8 @@ import '../services/database_service.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
 import 'edit_recipe_screen.dart';
+import 'cooking_mode_screen.dart';
+import 'shopping_list_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   final Recipe recipe;
@@ -17,11 +19,29 @@ class DetailScreen extends StatefulWidget {
   State<DetailScreen> createState() => _DetailScreenState();
 }
 
+// Scales a number in an ingredient string by [factor].
+String _scaleIngredient(String ingredient, double factor) {
+  if (factor == 1.0) return ingredient;
+  return ingredient.replaceAllMapped(
+    RegExp(r'(\d+(?:[.,]\d+)?)'),
+    (m) {
+      final value = double.tryParse(m.group(1)!.replaceAll(',', '.'));
+      if (value == null) return m.group(1)!;
+      final scaled = value * factor;
+      return scaled == scaled.roundToDouble() ? scaled.toInt().toString() : scaled.toStringAsFixed(1);
+    },
+  );
+}
+
 class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late Recipe _recipe;
   final _db = DatabaseService();
   final _notif = NotificationService();
+  int _servings = 0; // 0 = pakai default recipe.servings
+
+  int get _currentServings => _servings == 0 ? _recipe.servings : _servings;
+  double get _scaleFactor => _currentServings / _recipe.servings;
 
   @override
   void initState() {
@@ -68,6 +88,10 @@ Dibagikan dari aplikasi ResepKu
     Share.share(text, subject: 'Resep ${_recipe.title}');
   }
 
+  void _openCookingMode() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => CookingModeScreen(recipe: _recipe)));
+  }
+
   void _openTimer() {
     showModalBottomSheet(
       context: context,
@@ -75,6 +99,20 @@ Dibagikan dari aplikasi ResepKu
       backgroundColor: Colors.transparent,
       builder: (_) => _TimerSheet(recipe: _recipe, notif: _notif),
     );
+  }
+
+  Future<void> _addToShoppingList() async {
+    await _db.addIngredientsToShoppingList(_recipe);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${_recipe.ingredients.length} bahan ditambahkan ke daftar belanja!'),
+      backgroundColor: AppTheme.primary,
+      action: SnackBarAction(
+        label: 'Lihat',
+        textColor: Colors.amber,
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShoppingListScreen())),
+      ),
+    ));
   }
 
   Future<void> _openEdit() async {
@@ -180,22 +218,33 @@ Dibagikan dari aplikasi ResepKu
                         _StatCard(icon: Icons.bar_chart, value: _recipe.difficulty, unit: 'tingkat'),
                       ]),
                       const SizedBox(height: 16),
-                      // Timer button
+                      // Serving scaler
+                      _buildServingScaler(),
+                      const SizedBox(height: 12),
+                      // Action buttons
+                      Row(children: [
+                        Expanded(child: ElevatedButton.icon(
+                          onPressed: _openCookingMode,
+                          icon: const Icon(Icons.play_circle),
+                          label: const Text('Mode Memasak'),
+                        )),
+                        const SizedBox(width: 10),
+                        Expanded(child: OutlinedButton.icon(
+                          onPressed: _openTimer,
+                          icon: const Icon(Icons.timer),
+                          label: const Text('Timer'),
+                        )),
+                      ]),
+                      const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: _openTimer,
-                          icon: const Icon(Icons.timer, color: AppTheme.primary),
-                          label: Text('Mulai Timer ${_recipe.cookingTime} Menit', style: const TextStyle(color: AppTheme.primary)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: AppTheme.primary),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
+                          onPressed: _addToShoppingList,
+                          icon: const Icon(Icons.shopping_cart_outlined),
+                          label: const Text('Tambah ke Daftar Belanja'),
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // Rating pengguna
                       _buildRatingSection(),
                     ],
                   ),
@@ -258,7 +307,46 @@ Dibagikan dari aplikasi ResepKu
     );
   }
 
+  Widget _buildServingScaler() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.people, color: AppTheme.primary, size: 20),
+        const SizedBox(width: 8),
+        const Text('Porsi:', style: TextStyle(fontWeight: FontWeight.w600)),
+        const Spacer(),
+        IconButton(
+          onPressed: _currentServings > 1 ? () => setState(() => _servings = _currentServings - 1) : null,
+          icon: const Icon(Icons.remove_circle_outline, color: AppTheme.primary),
+          padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text('$_currentServings', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ),
+        IconButton(
+          onPressed: () => setState(() => _servings = _currentServings + 1),
+          icon: const Icon(Icons.add_circle_outline, color: AppTheme.primary),
+          padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+        ),
+        if (_servings != 0) ...[
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => setState(() => _servings = 0),
+            child: const Text('Reset', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+          ),
+        ],
+      ]),
+    );
+  }
+
   Widget _buildIngredients() {
+    final scale = _scaleFactor;
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _recipe.ingredients.length,
@@ -267,7 +355,7 @@ Dibagikan dari aplikasi ResepKu
         child: Row(children: [
           Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle)),
           const SizedBox(width: 12),
-          Expanded(child: Text(_recipe.ingredients[i], style: const TextStyle(fontSize: 15))),
+          Expanded(child: Text(_scaleIngredient(_recipe.ingredients[i], scale), style: const TextStyle(fontSize: 15))),
         ]),
       ),
     );

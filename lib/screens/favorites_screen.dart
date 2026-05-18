@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/recipe.dart';
 import '../services/database_service.dart';
-import '../utils/app_theme.dart';
 import '../widgets/recipe_card.dart';
+import '../widgets/shimmer_card.dart';
+import '../widgets/error_view.dart';
 import 'detail_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
@@ -13,63 +14,82 @@ class FavoritesScreen extends StatefulWidget {
 }
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
-  final DatabaseService _db = DatabaseService();
+  final _db = DatabaseService();
   List<Recipe> _favorites = [];
   bool _loading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _loadFavorites();
+    _load();
   }
 
-  Future<void> _loadFavorites() async {
-    setState(() => _loading = true);
-    final favs = await _db.getFavorites();
-    setState(() {
-      _favorites = favs;
-      _loading = false;
-    });
+  Future<void> _load() async {
+    setState(() { _loading = true; _hasError = false; });
+    try {
+      final favs = await _db.getFavorites();
+      if (mounted) setState(() { _favorites = favs; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _hasError = true; });
+    }
   }
 
-  Future<void> _toggleFavorite(Recipe recipe) async {
+  Future<void> _removeFavorite(Recipe recipe) async {
     await _db.toggleFavorite(recipe.id!, false);
-    _loadFavorites();
+    _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('"${recipe.title}" dihapus dari favorit'),
+      action: SnackBarAction(
+        label: 'Batalkan',
+        textColor: Colors.amber,
+        onPressed: () async {
+          await _db.toggleFavorite(recipe.id!, true);
+          _load();
+        },
+      ),
+      duration: const Duration(seconds: 4),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Resep Favorit')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-          : _favorites.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.favorite_border, size: 80, color: AppTheme.textSecondary),
-                      SizedBox(height: 16),
-                      Text('Belum ada resep favorit', style: TextStyle(fontSize: 18, color: AppTheme.textSecondary)),
-                      SizedBox(height: 8),
-                      Text('Tambahkan resep ke favorit\ndengan menekan ikon hati', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSecondary)),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadFavorites,
-                  child: ListView.builder(
-                    itemCount: _favorites.length,
-                    itemBuilder: (_, i) => RecipeCard(
-                      recipe: _favorites[i],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => DetailScreen(recipe: _favorites[i])),
-                      ).then((_) => _loadFavorites()),
-                      onFavorite: () => _toggleFavorite(_favorites[i]),
+      body: _hasError
+          ? ErrorView(message: 'Gagal memuat favorit', onRetry: _load)
+          : _loading
+              ? const ShimmerList(count: 3)
+              : _favorites.isEmpty
+                  ? const EmptyView(
+                      icon: Icons.favorite_border,
+                      title: 'Belum Ada Favorit',
+                      subtitle: 'Tekan ikon hati pada resep\nuntuk menambahkan ke favorit',
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.builder(
+                        itemCount: _favorites.length,
+                        itemBuilder: (_, i) => Dismissible(
+                          key: Key('fav_${_favorites[i].id}'),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(16)),
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20),
+                            child: const Icon(Icons.favorite_border, color: Colors.white),
+                          ),
+                          onDismissed: (_) => _removeFavorite(_favorites[i]),
+                          child: RecipeCard(
+                            recipe: _favorites[i],
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(recipe: _favorites[i]))).then((_) => _load()),
+                            onFavorite: () => _removeFavorite(_favorites[i]),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
     );
   }
 }

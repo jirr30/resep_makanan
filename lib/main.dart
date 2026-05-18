@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:in_app_review/in_app_review.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'screens/home_screen.dart';
-import 'screens/onboarding_screen.dart';
+import 'providers/theme_provider.dart';
+import 'screens/splash_screen.dart';
 import 'services/notification_service.dart';
 import 'utils/app_theme.dart';
 
@@ -11,22 +13,46 @@ void main() async {
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   await NotificationService().init();
   await NotificationService().requestPermission();
-  final prefs = await SharedPreferences.getInstance();
-  final onboardingDone = prefs.getBool('onboarding_done') ?? false;
-  runApp(ResepMakananApp(showOnboarding: !onboardingDone));
+  await _maybeRequestReview();
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const ResepMakananApp(),
+    ),
+  );
+}
+
+Future<void> _maybeRequestReview() async {
+  final prefs  = await SharedPreferences.getInstance();
+  final opens  = prefs.getInt('open_count') ?? 0;
+  final shown  = prefs.getBool('review_shown') ?? false;
+  if (opens >= 5 && !shown) {
+    await prefs.setBool('review_shown', true);
+    final review = InAppReview.instance;
+    if (await review.isAvailable()) {
+      await review.requestReview();
+    }
+  }
 }
 
 class ResepMakananApp extends StatelessWidget {
-  final bool showOnboarding;
-  const ResepMakananApp({super.key, required this.showOnboarding});
+  const ResepMakananApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'ResepKu',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.theme,
-      home: showOnboarding ? const OnboardingScreen() : const HomeScreen(),
+    return Consumer<ThemeProvider>(
+      builder: (_, theme, __) => MaterialApp(
+        title: 'ResepKu',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: theme.mode,
+        home: const SplashScreen(),
+        localizationsDelegates: const [
+          DefaultMaterialLocalizations.delegate,
+          DefaultWidgetsLocalizations.delegate,
+        ],
+      ),
     );
   }
 }
