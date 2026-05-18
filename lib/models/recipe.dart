@@ -91,6 +91,7 @@ class Recipe {
   }
 
   Recipe copyWith({
+    int? id,
     String? firestoreId,
     bool? isFavorite,
     double? userRating,
@@ -101,7 +102,7 @@ class Recipe {
     double? fat,
   }) {
     return Recipe(
-      id: id,
+      id: id ?? this.id,
       firestoreId: firestoreId ?? this.firestoreId,
       title: title,
       category: category,

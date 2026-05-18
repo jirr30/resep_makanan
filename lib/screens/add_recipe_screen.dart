@@ -23,7 +23,6 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
   final _db          = DatabaseService();
   final _titleCtrl   = TextEditingController();
   final _descCtrl    = TextEditingController();
-  final _imageCtrl   = TextEditingController();
   final _timeCtrl    = TextEditingController();
   final _servingsCtrl = TextEditingController();
 
@@ -38,7 +37,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
 
   @override
   void dispose() {
-    for (final c in [_titleCtrl, _descCtrl, _imageCtrl, _timeCtrl, _servingsCtrl]) {
+    for (final c in [_titleCtrl, _descCtrl, _timeCtrl, _servingsCtrl]) {
       c.dispose();
     }
     for (final c in _ingredientCtrls) { c.dispose(); }
@@ -76,28 +75,32 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
     if (!mounted) return;
     setState(() => _savingMessage = 'Menyimpan resep...');
 
-    final recipe = Recipe(
-      title: _titleCtrl.text.trim(),
-      category: _category,
+    var recipe = Recipe(
+      title:       _titleCtrl.text.trim(),
+      category:    _category,
       description: _descCtrl.text.trim(),
-      imageUrl: _imageCtrl.text.trim().isEmpty
-          ? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'
-          : _imageCtrl.text.trim(),
-      imagePath: _localImagePath,
+      imageUrl:    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+      imagePath:   _localImagePath,
       ingredients: ingredients,
-      steps: _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
+      steps:       _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
       cookingTime: int.tryParse(_timeCtrl.text) ?? 30,
-      servings: servings,
-      difficulty: _difficulty,
-      calories: nutrition?.calories ?? 0,
-      protein:  nutrition?.protein  ?? 0,
-      carbs:    nutrition?.carbs    ?? 0,
-      fat:      nutrition?.fat      ?? 0,
+      servings:    servings,
+      difficulty:  _difficulty,
+      calories:    nutrition?.calories ?? 0,
+      protein:     nutrition?.protein  ?? 0,
+      carbs:       nutrition?.carbs    ?? 0,
+      fat:         nutrition?.fat      ?? 0,
     );
 
-    await _db.insertRecipe(recipe);
+    final id = await _db.insertRecipe(recipe);
+
     if (_shareToCommunity && FirebaseAuth.instance.currentUser != null) {
-      await FirestoreService().publishRecipe(recipe);
+      final firestoreId = await FirestoreService().publishRecipe(recipe);
+      if (firestoreId != null) {
+        // Simpan firestoreId agar resep tidak bisa dipublish ulang
+        recipe = recipe.copyWith(id: id, firestoreId: firestoreId);
+        await _db.updateRecipe(recipe);
+      }
     }
 
     if (mounted) {
@@ -266,7 +269,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
   }
 
   Widget _buildImagePicker() {
-    final hasLocal = _localImagePath != null;
+    final hasLocal = _localImagePath != null && File(_localImagePath!).existsSync();
     return GestureDetector(
       onTap: _pickImage,
       child: Container(
