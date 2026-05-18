@@ -35,9 +35,6 @@ class DatabaseService {
           await db.execute('''CREATE TABLE IF NOT EXISTS custom_categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)''');
         }
-        if (oldVersion < 4) {
-          await db.execute('ALTER TABLE recipes ADD COLUMN firestoreId TEXT');
-        }
         if (oldVersion < 3) {
           await db.execute('''CREATE TABLE IF NOT EXISTS shopping_list (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +48,9 @@ class DatabaseService {
             date TEXT NOT NULL,
             mealType TEXT NOT NULL,
             recipeId INTEGER NOT NULL)''');
+        }
+        if (oldVersion < 4) {
+          await db.execute('ALTER TABLE recipes ADD COLUMN firestoreId TEXT');
         }
       },
     );

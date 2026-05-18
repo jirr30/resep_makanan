@@ -5,8 +5,8 @@ import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
+import 'auth_gate_screen.dart';
 import 'community_detail_screen.dart';
-import 'login_screen.dart';
 import 'profile_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
@@ -59,8 +59,15 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
             )
           else
             TextButton.icon(
-              onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen())),
+              onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                PageRouteBuilder(
+                  pageBuilder: (_, __, ___) => const AuthGateScreen(),
+                  transitionsBuilder: (_, anim, __, child) =>
+                      FadeTransition(opacity: anim, child: child),
+                  transitionDuration: const Duration(milliseconds: 350),
+                ),
+                (_) => false,
+              ),
               icon: const Icon(Icons.login, size: 18),
               label: const Text('Login'),
             ),
@@ -79,8 +86,15 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
           _AllRecipesTab(fs: _fs),
           auth.isLoggedIn
               ? _MyRecipesTab(fs: _fs)
-              : _LoginPrompt(onLogin: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()))),
+              : _LoginPrompt(onLogin: () => Navigator.of(context).pushAndRemoveUntil(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const AuthGateScreen(),
+                    transitionsBuilder: (_, anim, __, child) =>
+                        FadeTransition(opacity: anim, child: child),
+                    transitionDuration: const Duration(milliseconds: 350),
+                  ),
+                  (_) => false,
+                )),
         ],
       ),
     );

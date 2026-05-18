@@ -91,8 +91,9 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
     setState(() => _savingMessage = 'Menyimpan perubahan...');
 
     final updated = Recipe(
-      id:         widget.recipe.id,
-      title:      _titleCtrl.text.trim(),
+      id:           widget.recipe.id,
+      firestoreId:  widget.recipe.firestoreId,
+      title:        _titleCtrl.text.trim(),
       category:   _category,
       description: _descCtrl.text.trim(),
       imageUrl:   _imageCtrl.text.trim(),

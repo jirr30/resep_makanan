@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
-import 'login_screen.dart';
+import 'auth_gate_screen.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final CommunityRecipe recipe;
@@ -422,15 +422,19 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
           ])
         else if (_currentUserId == null)
           GestureDetector(
-            onTap: () async {
-              await Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()));
-              if (mounted) _loadUserRating();
-            },
-            child: Row(children: [
-              const Icon(Icons.login, size: 16, color: AppTheme.primary),
-              const SizedBox(width: 6),
-              const Text('Login untuk memberi rating',
+            onTap: () => Navigator.of(context).pushAndRemoveUntil(
+              PageRouteBuilder(
+                pageBuilder: (_, __, ___) => const AuthGateScreen(),
+                transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+                transitionDuration: const Duration(milliseconds: 350),
+              ),
+              (_) => false,
+            ),
+            child: const Row(children: [
+              Icon(Icons.login, size: 16, color: AppTheme.primary),
+              SizedBox(width: 6),
+              Text('Login untuk memberi rating',
                   style: TextStyle(color: AppTheme.primary, fontSize: 13,
                       fontWeight: FontWeight.w600)),
             ]),
