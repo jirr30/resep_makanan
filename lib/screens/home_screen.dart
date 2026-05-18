@@ -129,11 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (ctrl.text.trim().isNotEmpty) {
-                _db.addCustomCategory(ctrl.text.trim()).then((_) {
-                  if (context.mounted) Navigator.pop(context);
-                });
+                final nav = Navigator.of(context);
+                await _db.addCustomCategory(ctrl.text.trim());
+                nav.pop();
               }
             },
             child: const Text('Tambah'),

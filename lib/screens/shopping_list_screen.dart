@@ -44,11 +44,13 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (nameCtrl.text.trim().isEmpty) return;
-              _db.addShoppingItem(nameCtrl.text.trim(),
+              final nav = Navigator.of(context);
+              await _db.addShoppingItem(nameCtrl.text.trim(),
                 quantity: qtyCtrl.text.trim().isEmpty ? null : qtyCtrl.text.trim(),
-              ).then((_) { if (context.mounted) Navigator.pop(context); });
+              );
+              nav.pop();
             },
             child: const Text('Tambah'),
           ),
