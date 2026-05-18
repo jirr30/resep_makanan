@@ -16,7 +16,7 @@ class NutritionResult {
 }
 
 class NutritionService {
-  static const _apiKey = 'GEMINI_API_KEY_PLACEHOLDER';
+  static const _apiKey = 'AIzaSyBaE4T7wXrNpKqFBp9MwLkP45H2tOGJISU';
 
   Future<NutritionResult> estimateFromIngredients({
     required List<String> ingredients,
@@ -28,7 +28,7 @@ class NutritionService {
     }
 
     final model = GenerativeModel(
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       apiKey: _apiKey,
       generationConfig: GenerationConfig(
         responseMimeType: 'application/json',
