@@ -19,18 +19,13 @@ class AddRecipeScreen extends StatefulWidget {
 }
 
 class _AddRecipeScreenState extends State<AddRecipeScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _db = DatabaseService();
-
-  final _titleCtrl    = TextEditingController();
-  final _descCtrl     = TextEditingController();
-  final _imageCtrl    = TextEditingController();
-  final _timeCtrl     = TextEditingController();
+  final _formKey     = GlobalKey<FormState>();
+  final _db          = DatabaseService();
+  final _titleCtrl   = TextEditingController();
+  final _descCtrl    = TextEditingController();
+  final _imageCtrl   = TextEditingController();
+  final _timeCtrl    = TextEditingController();
   final _servingsCtrl = TextEditingController();
-  final _calCtrl      = TextEditingController();
-  final _proteinCtrl  = TextEditingController();
-  final _carbsCtrl    = TextEditingController();
-  final _fatCtrl      = TextEditingController();
 
   String _category   = AppConstants.categories[1];
   String _difficulty = AppConstants.difficulties[0];
@@ -38,13 +33,14 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
   final List<TextEditingController> _stepCtrls       = [TextEditingController()];
   String? _localImagePath;
   bool _saving = false;
+  String _savingMessage = '';
   bool _shareToCommunity = false;
-  bool _calculatingNutrition = false;
 
   @override
   void dispose() {
-    for (final c in [_titleCtrl, _descCtrl, _imageCtrl, _timeCtrl, _servingsCtrl,
-      _calCtrl, _proteinCtrl, _carbsCtrl, _fatCtrl]) { c.dispose(); }
+    for (final c in [_titleCtrl, _descCtrl, _imageCtrl, _timeCtrl, _servingsCtrl]) {
+      c.dispose();
+    }
     for (final c in _ingredientCtrls) { c.dispose(); }
     for (final c in _stepCtrls) { c.dispose(); }
     super.dispose();
@@ -53,56 +49,33 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
   Future<void> _pickImage() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked == null) return;
-    final dir = await getApplicationDocumentsDirectory();
+    final dir  = await getApplicationDocumentsDirectory();
     final name = 'recipe_${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}';
     final saved = await File(picked.path).copy('${dir.path}/$name');
     setState(() => _localImagePath = saved.path);
   }
 
-  Future<void> _calculateNutrition() async {
-    final ingredients = _ingredientCtrls
-        .map((c) => c.text.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (ingredients.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Isi bahan-bahan terlebih dahulu')),
-      );
-      return;
-    }
-    setState(() => _calculatingNutrition = true);
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() { _saving = true; _savingMessage = 'Menghitung nutrisi...'; });
+
+    final ingredients = _ingredientCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+    final servings    = int.tryParse(_servingsCtrl.text) ?? 2;
+
+    // Hitung nutrisi otomatis — jika gagal, simpan dengan nilai 0 (tidak blokir user)
+    NutritionResult? nutrition;
     try {
-      final servings = int.tryParse(_servingsCtrl.text) ?? 1;
-      final result = await NutritionService().estimateFromIngredients(
+      nutrition = await NutritionService().estimateFromIngredients(
         ingredients: ingredients,
         servings: servings,
       );
-      if (!mounted) return;
-      setState(() {
-        _calCtrl.text     = result.calories.toString();
-        _proteinCtrl.text = result.protein.toStringAsFixed(1);
-        _carbsCtrl.text   = result.carbs.toStringAsFixed(1);
-        _fatCtrl.text     = result.fat.toStringAsFixed(1);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nutrisi berhasil dihitung!'),
-          backgroundColor: AppTheme.primary,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal menghitung nutrisi: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _calculatingNutrition = false);
+    } catch (_) {
+      nutrition = null;
     }
-  }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    if (!mounted) return;
+    setState(() => _savingMessage = 'Menyimpan resep...');
+
     final recipe = Recipe(
       title: _titleCtrl.text.trim(),
       category: _category,
@@ -111,20 +84,22 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
           ? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'
           : _imageCtrl.text.trim(),
       imagePath: _localImagePath,
-      ingredients: _ingredientCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
+      ingredients: ingredients,
       steps: _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
       cookingTime: int.tryParse(_timeCtrl.text) ?? 30,
-      servings: int.tryParse(_servingsCtrl.text) ?? 2,
+      servings: servings,
       difficulty: _difficulty,
-      calories: int.tryParse(_calCtrl.text) ?? 0,
-      protein: double.tryParse(_proteinCtrl.text) ?? 0,
-      carbs: double.tryParse(_carbsCtrl.text) ?? 0,
-      fat: double.tryParse(_fatCtrl.text) ?? 0,
+      calories: nutrition?.calories ?? 0,
+      protein:  nutrition?.protein  ?? 0,
+      carbs:    nutrition?.carbs    ?? 0,
+      fat:      nutrition?.fat      ?? 0,
     );
+
     await _db.insertRecipe(recipe);
     if (_shareToCommunity && FirebaseAuth.instance.currentUser != null) {
       await FirestoreService().publishRecipe(recipe);
     }
+
     if (mounted) {
       final msg = _shareToCommunity
           ? 'Resep disimpan & dibagikan ke komunitas!'
@@ -192,47 +167,6 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               onChanged: (v) => setState(() => _difficulty = v!),
             ),
             const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _section('Informasi Nutrisi (per porsi)'),
-                _calculatingNutrition
-                    ? const SizedBox(
-                        width: 24, height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
-                      )
-                    : TextButton.icon(
-                        onPressed: _calculateNutrition,
-                        icon: const Icon(Icons.auto_awesome, size: 16, color: AppTheme.primary),
-                        label: const Text('Hitung Otomatis', style: TextStyle(color: AppTheme.primary, fontSize: 13)),
-                      ),
-              ],
-            ),
-            Row(children: [
-              Expanded(child: TextFormField(
-                controller: _calCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Kalori (kkal)', prefixIcon: Icon(Icons.local_fire_department)),
-              )),
-              const SizedBox(width: 12),
-              Expanded(child: TextFormField(
-                controller: _proteinCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Protein (g)', prefixIcon: Icon(Icons.egg)),
-              )),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: TextFormField(
-                controller: _carbsCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Karbo (g)', prefixIcon: Icon(Icons.grain)),
-              )),
-              const SizedBox(width: 12),
-              Expanded(child: TextFormField(
-                controller: _fatCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Lemak (g)', prefixIcon: Icon(Icons.opacity)),
-              )),
-            ]),
-            const SizedBox(height: 20),
             _section('Bahan-bahan'),
             ..._ingredientCtrls.asMap().entries.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -247,7 +181,10 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                 if (_ingredientCtrls.length > 1)
                   IconButton(
                     icon: const Icon(Icons.remove_circle, color: Colors.red),
-                    onPressed: () => setState(() { _ingredientCtrls[e.key].dispose(); _ingredientCtrls.removeAt(e.key); }),
+                    onPressed: () => setState(() {
+                      _ingredientCtrls[e.key].dispose();
+                      _ingredientCtrls.removeAt(e.key);
+                    }),
                   ),
               ]),
             )),
@@ -267,13 +204,17 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                     child: Text('${e.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12))),
                 ),
                 Expanded(child: TextFormField(
-                  controller: e.value, maxLines: 2,
+                  controller: e.value,
+                  maxLines: 2,
                   decoration: InputDecoration(labelText: 'Langkah ${e.key + 1}'),
                 )),
                 if (_stepCtrls.length > 1)
                   IconButton(
                     icon: const Icon(Icons.remove_circle, color: Colors.red),
-                    onPressed: () => setState(() { _stepCtrls[e.key].dispose(); _stepCtrls.removeAt(e.key); }),
+                    onPressed: () => setState(() {
+                      _stepCtrls[e.key].dispose();
+                      _stepCtrls.removeAt(e.key);
+                    }),
                   ),
               ]),
             )),
@@ -307,7 +248,11 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
               child: _saving
-                  ? const CircularProgressIndicator(color: Colors.white)
+                  ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                      const SizedBox(width: 12),
+                      Text(_savingMessage, style: const TextStyle(color: Colors.white)),
+                    ])
                   : Text(
                       _shareToCommunity ? 'Simpan & Bagikan' : 'Simpan Resep',
                       style: const TextStyle(fontSize: 16),
@@ -340,10 +285,10 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                     child: const Icon(Icons.edit, color: Colors.white, size: 32)),
                 ]),
               )
-            : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
-                const SizedBox(height: 8),
-                const Text('Pilih foto dari galeri (opsional)', style: TextStyle(color: AppTheme.textSecondary)),
+            : const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.add_photo_alternate, size: 48, color: AppTheme.primary),
+                SizedBox(height: 8),
+                Text('Pilih foto dari galeri (opsional)', style: TextStyle(color: AppTheme.textSecondary)),
               ]),
       ),
     );
