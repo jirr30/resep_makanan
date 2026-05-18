@@ -1,0 +1,271 @@
+name: Build & Release Android
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_to_play_store:
+        description: 'Deploy ke Play Store?'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  FLUTTER_VERSION: '3.29.3'
+  JAVA_VERSION: '17'
+
+jobs:
+  # ─────────────────────────────────────────
+  # JOB 1: Analisis & Test
+  # ─────────────────────────────────────────
+  test:
+    name: Analisis & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analisis kode (lint)
+        run: flutter analyze --no-fatal-infos
+
+      - name: Jalankan unit test
+        run: flutter test --coverage
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          file: coverage/lcov.info
+          fail_ci_if_error: false
+
+  # ─────────────────────────────────────────
+  # JOB 2: Build APK (Debug - untuk PR)
+  # ─────────────────────────────────────────
+  build-debug:
+    name: Build APK Debug
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK Debug
+        run: flutter build apk --debug
+
+      - name: Upload APK Debug sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk-pr${{ github.event.number }}
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
+
+  # ─────────────────────────────────────────
+  # JOB 3: Build Release AAB (untuk Play Store)
+  # ─────────────────────────────────────────
+  build-release:
+    name: Build Release AAB (Play Store)
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Decode keystore dari GitHub Secret
+      - name: Decode & simpan Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/resepku-release.jks
+
+      # Buat file key.properties untuk Gradle
+      - name: Buat key.properties
+        run: |
+          cat > android/key.properties << EOF
+          storePassword=${{ secrets.STORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=resepku-release.jks
+          EOF
+
+      # Hitung version code dari build number
+      - name: Set version dari tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION_NAME="${VERSION#v}"
+          else
+            VERSION_NAME="1.0.0"
+          fi
+          BUILD_NUMBER="${{ github.run_number }}"
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION_NAME+$BUILD_NUMBER"
+
+      # Build App Bundle untuk Play Store
+      - name: Build App Bundle (AAB)
+        run: |
+          flutter build appbundle --release \
+            --build-name=${{ steps.version.outputs.version_name }} \
+            --build-number=${{ steps.version.outputs.build_number }}
+
+      # Build APK universal (opsional, untuk distribusi langsung)
+      - name: Build APK Release
+        run: |
+          flutter build apk --release \
+            --build-name=${{ steps.version.outputs.version_name }} \
+            --build-number=${{ steps.version.outputs.build_number }}
+
+      # Build APK per arsitektur (lebih kecil)
+      - name: Build APK Split per ABI
+        run: |
+          flutter build apk --release --split-per-abi \
+            --build-name=${{ steps.version.outputs.version_name }} \
+            --build-number=${{ steps.version.outputs.build_number }}
+
+      # Upload AAB sebagai artifact
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab-${{ steps.version.outputs.version_name }}+${{ steps.version.outputs.build_number }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      # Upload APK sebagai artifact
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-${{ steps.version.outputs.version_name }}+${{ steps.version.outputs.build_number }}
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          retention-days: 30
+
+      # Hapus file keystore sensitif
+      - name: Hapus Keystore
+        if: always()
+        run: |
+          rm -f android/app/resepku-release.jks
+          rm -f android/key.properties
+
+      # Buat GitHub Release otomatis saat ada tag baru
+      - name: Buat GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ResepKu ${{ github.ref_name }}
+          body: |
+            ## Perubahan di versi ${{ github.ref_name }}
+
+            ### Cara Install
+            1. Download file APK sesuai arsitektur HP kamu
+            2. Aktifkan "Install dari sumber tidak dikenal" di pengaturan
+            3. Install APK
+
+            ### File yang tersedia
+            - `app-arm64-v8a-release.apk` — untuk HP modern (64-bit)
+            - `app-armeabi-v7a-release.apk` — untuk HP lama (32-bit)
+            - `app-release.apk` — universal (semua HP, ukuran lebih besar)
+            - `app-release.aab` — untuk upload ke Play Store
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          draft: false
+          prerelease: false
+
+  # ─────────────────────────────────────────
+  # JOB 4: Upload ke Google Play Store
+  # ─────────────────────────────────────────
+  deploy-play-store:
+    name: Deploy ke Play Store
+    runs-on: ubuntu-latest
+    needs: build-release
+    # Hanya upload ke Play Store saat ada tag release ATAU manual trigger
+    if: |
+      (startsWith(github.ref, 'refs/tags/v') ||
+       github.event.inputs.deploy_to_play_store == 'true') &&
+      github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      # Download AAB dari job sebelumnya
+      - name: Download AAB artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-aab-*
+          merge-multiple: true
+          path: build/app/outputs/bundle/release/
+
+      # Upload ke Play Store (Internal Testing → Alpha → Beta → Production)
+      - name: Upload ke Google Play Store (Internal Testing)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.resepku.resep_makanan
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: internal            # Ganti ke 'alpha', 'beta', atau 'production'
+          status: completed
+          inAppUpdatePriority: 2
+          whatsNewDirectory: distribution/whatsnew
