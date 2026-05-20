@@ -56,6 +56,7 @@ class FirestoreService {
       'averageRating': 0.0,
       'ratingCount':   0,
       'commentCount':  0,
+      'viewCount':     0,
     });
     return ref.id;
   }
@@ -327,11 +328,18 @@ class FirestoreService {
   Future<void> unfollowUser(String targetUid) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final batch = _db.batch();
-    batch.delete(_follows.doc('${user.uid}_$targetUid'));
-    batch.set(_users.doc(user.uid),  {'followingCount': FieldValue.increment(-1)}, SetOptions(merge: true));
-    batch.set(_users.doc(targetUid), {'followerCount':  FieldValue.increment(-1)}, SetOptions(merge: true));
-    await batch.commit();
+    final followDocId = '${user.uid}_$targetUid';
+    await _db.runTransaction((tx) async {
+      final myDoc     = await tx.get(_users.doc(user.uid));
+      final targetDoc = await tx.get(_users.doc(targetUid));
+      final myData     = myDoc.exists ? myDoc.data() as Map<String, dynamic> : <String, dynamic>{};
+      final targetData = targetDoc.exists ? targetDoc.data() as Map<String, dynamic> : <String, dynamic>{};
+      final myFollowing    = (myData['followingCount']     as int? ?? 0).clamp(0, 999999999);
+      final targetFollower = (targetData['followerCount']  as int? ?? 0).clamp(0, 999999999);
+      tx.delete(_follows.doc(followDocId));
+      tx.set(_users.doc(user.uid),  {'followingCount': myFollowing > 0 ? myFollowing - 1 : 0},     SetOptions(merge: true));
+      tx.set(_users.doc(targetUid), {'followerCount':  targetFollower > 0 ? targetFollower - 1 : 0}, SetOptions(merge: true));
+    });
   }
 
   Future<PagedResult> getFollowingFeed({DocumentSnapshot? startAfter}) async {
@@ -414,8 +422,8 @@ class FirestoreService {
       totalViews:     totalViews,
       averageRating:  avgRating,
       recipes:        recipes,
-      followerCount:  userData['followerCount']  as int? ?? 0,
-      followingCount: userData['followingCount'] as int? ?? 0,
+      followerCount:  ((userData['followerCount']  as int? ?? 0)).clamp(0, 999999999),
+      followingCount: ((userData['followingCount'] as int? ?? 0)).clamp(0, 999999999),
     );
   }
 }

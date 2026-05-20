@@ -480,22 +480,35 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 ? const SizedBox(
                     width: 24, height: 24,
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
-                : OutlinedButton(
-                    onPressed: _toggleFollow,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      side: const BorderSide(color: AppTheme.primary),
-                      foregroundColor: AppTheme.primary,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                    ),
-                    child: Text(
-                      _isFollowing! ? 'Mengikuti' : 'Ikuti',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
+                : _isFollowing!
+                    ? OutlinedButton(
+                        onPressed: _toggleFollow,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          side: const BorderSide(color: AppTheme.primary),
+                          foregroundColor: AppTheme.primary,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20)),
+                        ),
+                        child: const Text('Mengikuti',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      )
+                    : ElevatedButton(
+                        onPressed: _toggleFollow,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20)),
+                        ),
+                        child: const Text('Ikuti',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
           ),
       ]),
     );

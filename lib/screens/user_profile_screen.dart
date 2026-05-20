@@ -58,6 +58,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
+  Widget _buildFollowSkeleton() {
+    return Container(
+      key: const ValueKey('skeleton'),
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
   Future<void> _toggleFollow() async {
     if (_currentUid == null || _isOwnProfile || _isFollowing == null) return;
     setState(() => _followLoading = true);
@@ -195,38 +206,43 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         if (!_isOwnProfile && _currentUid != null)
           SizedBox(
             width: double.infinity,
-            child: _followLoading
-                ? const Center(
-                    child: Padding(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _followLoading
+                  ? const Padding(
                       padding: EdgeInsets.symmetric(vertical: 14),
-                      child: CircularProgressIndicator(color: AppTheme.primary),
-                    ),
-                  )
-                : _isFollowing == true
-                    ? OutlinedButton.icon(
-                        onPressed: _toggleFollow,
-                        icon: const Icon(Icons.person_remove_outlined, size: 18),
-                        label: const Text('Mengikuti'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          side: const BorderSide(color: AppTheme.primary),
-                          foregroundColor: AppTheme.primary,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: _toggleFollow,
-                        icon: const Icon(Icons.person_add_outlined, size: 18),
-                        label: const Text('Ikuti'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
+                      child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+                    )
+                  : _isFollowing == null
+                      ? _buildFollowSkeleton()
+                      : _isFollowing!
+                          ? OutlinedButton.icon(
+                              key: const ValueKey('unfollow'),
+                              onPressed: _toggleFollow,
+                              icon: const Icon(Icons.person_remove_outlined, size: 18),
+                              label: const Text('Mengikuti'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                side: const BorderSide(color: AppTheme.primary),
+                                foregroundColor: AppTheme.primary,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              key: const ValueKey('follow'),
+                              onPressed: _toggleFollow,
+                              icon: const Icon(Icons.person_add_outlined, size: 18),
+                              label: const Text('Ikuti'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+            ),
           ),
       ]),
     );

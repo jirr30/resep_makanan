@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
+import 'add_recipe_screen.dart';
 import 'community_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -17,7 +18,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _fs = FirestoreService();
   UserProfileStats? _stats;
-  bool _loading = true;
+  bool    _loading = true;
+  Object? _error;
 
   @override
   void initState() {
@@ -27,14 +29,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    setState(() => _loading = true);
+    if (uid == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    setState(() { _loading = true; _error = null; });
     try {
-      _fs.syncCurrentUserProfile(); // fire-and-forget: update nama/foto di Firestore
+      _fs.syncCurrentUserProfile();
       final stats = await _fs.getUserStats(uid);
       if (mounted) setState(() { _stats = stats; _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) setState(() { _error = e; _loading = false; });
     }
   }
 
@@ -84,6 +89,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
               )
+            else if (_error != null)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.cloud_off_outlined, size: 64, color: AppTheme.textSubOn(context)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Gagal memuat profil',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textOn(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Periksa koneksi internet kamu dan coba lagi',
+                        style: TextStyle(color: AppTheme.textSubOn(context)),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _load,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Coba Lagi'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+              )
             else if (_stats != null) ...[
               SliverToBoxAdapter(child: _buildStats()),
               SliverToBoxAdapter(
@@ -106,10 +150,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(32),
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.restaurant_menu, size: 64, color: AppTheme.textSubOn(context)),
-                        const SizedBox(height: 12),
-                        Text('Belum ada resep yang dipublikasikan',
-                            style: TextStyle(color: AppTheme.textSubOn(context))),
+                        Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppTheme.primary, Color(0xFFFF8C55)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: const Icon(Icons.restaurant_menu, size: 48, color: Colors.white),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Belum ada resep yang dibagikan',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textOn(context),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Bagikan resepmu ke komunitas agar\nchef lain bisa melihat kreasimu!',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSubOn(context),
+                            height: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
+                          ).then((_) => _load()),
+                          icon: const Icon(Icons.add, color: Colors.white),
+                          label: const Text('Bagikan Resep Sekarang',
+                              style: TextStyle(color: Colors.white)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
                       ]),
                     ),
                   ),
