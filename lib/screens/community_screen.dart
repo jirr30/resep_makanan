@@ -151,7 +151,9 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
   Future<void> _loadInitial() async {
     setState(() { _loading = true; _error = null; _recipes = []; _hasMore = true; });
     try {
-      final result = await widget.fs.getRecipesPaged();
+      final result = await widget.fs.getRecipesPaged(
+        category: _selectedCat == 'Semua' ? null : _selectedCat,
+      );
       if (mounted) {
         setState(() {
           _recipes = result.recipes;
@@ -168,26 +170,21 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
     if (_loadingMore || !_hasMore || _recipes.isEmpty) return;
     setState(() => _loadingMore = true);
     try {
-      // Ambil lastDoc dari Firestore untuk cursor
-      final lastSnap = await FirestoreService().getRecipesPaged(
-        startAfter: await _getLastDoc(),
+      final lastDoc = await widget.fs.getLastDocSnapshot(_recipes.last.id);
+      final result  = await widget.fs.getRecipesPaged(
+        startAfter: lastDoc,
+        category: _selectedCat == 'Semua' ? null : _selectedCat,
       );
       if (mounted) {
         setState(() {
-          _recipes.addAll(lastSnap.recipes);
-          _hasMore    = lastSnap.hasMore;
+          _recipes.addAll(result.recipes);
+          _hasMore     = result.hasMore;
           _loadingMore = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _loadingMore = false);
     }
-  }
-
-  // Ambil DocumentSnapshot terakhir dari Firestore
-  Future<dynamic> _getLastDoc() async {
-    final snap = await widget.fs.getLastDocSnapshot(_recipes.last.id);
-    return snap;
   }
 
   Future<void> _activateSearch(String query) async {
@@ -205,23 +202,24 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
 
   void _clearSearch() {
     _searchCtrl.clear();
-    setState(() {
-      _isSearching = false;
-      _searchQuery  = '';
-      _selectedCat  = 'Semua';
-    });
+    setState(() { _isSearching = false; _searchQuery = ''; });
+    _loadInitial();
   }
 
+  // Saat search aktif: filter pool by query + kategori.
+  // Saat tidak search: _recipes sudah difilter server-side, tampilkan langsung.
   List<CommunityRecipe> get _displayList {
-    final pool = _isSearching ? _searchPool : _recipes;
-    return pool.where((r) {
-      final matchCat   = _selectedCat == 'Semua' || r.category == _selectedCat;
-      final matchQuery = _searchQuery.isEmpty ||
-          r.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          r.authorName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          r.description.toLowerCase().contains(_searchQuery.toLowerCase());
-      return matchCat && matchQuery;
-    }).toList();
+    if (_isSearching) {
+      return _searchPool.where((r) {
+        final matchCat = _selectedCat == 'Semua' || r.category == _selectedCat;
+        final q        = _searchQuery.toLowerCase();
+        final matchQ   = r.title.toLowerCase().contains(q) ||
+            r.authorName.toLowerCase().contains(q) ||
+            r.description.toLowerCase().contains(q);
+        return matchCat && matchQ;
+      }).toList();
+    }
+    return _recipes;
   }
 
   @override
@@ -288,8 +286,9 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
             selected: selected,
             onSelected: (_) {
               setState(() => _selectedCat = cat);
-              if (cat != 'Semua' && !_isSearching) _activateSearch('');
-              if (cat == 'Semua' && _searchQuery.isEmpty) _clearSearch();
+              // Saat search aktif: cukup re-filter pool lewat _displayList.
+              // Saat tidak search: reload dari Firestore dengan filter kategori.
+              if (!_isSearching) _loadInitial();
             },
             backgroundColor: Colors.transparent,
             selectedColor: AppTheme.primary,
@@ -528,7 +527,7 @@ class _CommunityCard extends StatelessWidget {
                 if (showDelete)
                   IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                    onPressed: onDelete,
+                    onPressed: () => _confirmDelete(context),
                     tooltip: 'Hapus resep',
                   ),
               ]),
@@ -563,6 +562,28 @@ class _CommunityCard extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hapus Resep'),
+        content: Text(
+            'Hapus "${recipe.title}" dari komunitas?\nTindakan ini tidak bisa dibatalkan.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) onDelete?.call();
   }
 
   Widget _imagePlaceholder() => Container(

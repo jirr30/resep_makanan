@@ -162,15 +162,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Image.network(
-              'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-              width: 14, height: 14,
-              errorBuilder: (_, __, ___) => const Icon(Icons.account_circle, size: 14, color: AppTheme.primary),
+            Container(
+              width: 16, height: 16,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: const Color(0xFF4285F4), width: 1.5),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'G',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF4285F4),
+                  height: 1,
+                ),
+              ),
             ),
             const SizedBox(width: 6),
-            const Text('Google Account', style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+            const Text('Google Account',
+                style: TextStyle(fontSize: 12, color: AppTheme.primary)),
           ]),
         ),
+        if (user.metadata.creationTime != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Bergabung ${DateFormat('MMMM yyyy', 'id_ID').format(user.metadata.creationTime!)}',
+            style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context)),
+          ),
+        ],
       ]),
     );
   }

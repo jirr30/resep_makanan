@@ -62,18 +62,24 @@ class FirestoreService {
 
   static const int pageSize = 15;
 
-  Future<PagedResult> getRecipesPaged({DocumentSnapshot? startAfter}) async {
-    var query = _recipes
-        .orderBy('publishedAt', descending: true)
-        .limit(pageSize);
-    if (startAfter != null) query = query.startAfterDocument(startAfter);
+  Future<PagedResult> getRecipesPaged({
+    DocumentSnapshot? startAfter,
+    String? category,
+  }) async {
+    Query q = (category != null && category.isNotEmpty)
+        ? _recipes
+            .where('category', isEqualTo: category)
+            .orderBy('publishedAt', descending: true)
+        : _recipes.orderBy('publishedAt', descending: true);
+    q = q.limit(pageSize);
+    if (startAfter != null) q = q.startAfterDocument(startAfter);
 
-    final snap = await query.get();
+    final snap = await q.get();
     final recipes = snap.docs.map(CommunityRecipe.fromFirestore).toList();
     return PagedResult(
-      recipes:  recipes,
-      lastDoc:  snap.docs.isNotEmpty ? snap.docs.last : null,
-      hasMore:  snap.docs.length == pageSize,
+      recipes: recipes,
+      lastDoc: snap.docs.isNotEmpty ? snap.docs.last : null,
+      hasMore: snap.docs.length == pageSize,
     );
   }
 
