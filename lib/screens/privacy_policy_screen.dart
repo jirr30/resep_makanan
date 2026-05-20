@@ -14,7 +14,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Header('Kebijakan Privasi ResepKu'),
-            _Body('Terakhir diperbarui: 18 Mei 2026'),
+            _Body('Terakhir diperbarui: 20 Mei 2026'),
             SizedBox(height: 16),
             _Body(
               'ResepKu ("kami") berkomitmen untuk melindungi privasi pengguna. '
@@ -27,13 +27,16 @@ class PrivacyPolicyScreen extends StatelessWidget {
             _Bullet('Informasi akun Google (nama, email, foto profil) saat Anda login dengan Google.'),
             _Bullet('Resep yang Anda buat dan simpan secara lokal di perangkat Anda.'),
             _Bullet('Resep komunitas yang Anda publikasikan, termasuk foto yang diunggah.'),
-            _Bullet('Rating dan suka (like) yang Anda berikan pada resep komunitas.'),
+            _Bullet('Interaksi komunitas: suka (like), rating bintang, dan komentar pada resep.'),
+            _Bullet('Data sosial: daftar pengguna yang Anda ikuti dan yang mengikuti Anda (fitur follow).'),
+            _Bullet('Statistik resep: jumlah tayangan (view count) per resep komunitas.'),
             _Bullet('Pengaturan aplikasi seperti preferensi tampilan dan notifikasi.'),
 
             SizedBox(height: 24),
             _Section('2. Cara Kami Menggunakan Data'),
             _Bullet('Menampilkan dan menyimpan resep pribadi Anda di perangkat (SQLite lokal).'),
-            _Bullet('Memungkinkan fitur komunitas: berbagi resep, rating, dan like antar pengguna.'),
+            _Bullet('Memungkinkan fitur komunitas: berbagi resep, komentar, rating, like, dan follow chef lain.'),
+            _Bullet('Menampilkan jumlah followers, following, dan tayangan resep di profil publik Anda.'),
             _Bullet('Menghitung estimasi nutrisi menggunakan layanan Gemini AI dari Google.'),
             _Bullet('Mengirim notifikasi timer memasak sesuai pengaturan Anda.'),
 
@@ -59,9 +62,11 @@ class PrivacyPolicyScreen extends StatelessWidget {
             SizedBox(height: 24),
             _Section('6. Hak Pengguna'),
             _Bullet('Anda dapat menghapus resep komunitas yang Anda publikasikan kapan saja.'),
+            _Bullet('Anda dapat berhenti mengikuti (unfollow) pengguna lain kapan saja dari profil mereka.'),
+            _Bullet('Anda dapat menghapus komentar yang Anda tulis di resep komunitas.'),
             _Bullet('Anda dapat keluar (sign out) dari akun Google melalui menu Pengaturan.'),
-            _Bullet('Anda dapat menghapus aplikasi untuk menghapus semua data lokal.'),
-            _Bullet('Untuk permintaan penghapusan data komunitas, hubungi kami melalui email di bawah.'),
+            _Bullet('Anda dapat menghapus aplikasi untuk menghapus semua data lokal di perangkat.'),
+            _Bullet('Untuk permintaan penghapusan data akun dan komunitas, hubungi kami melalui email di bawah.'),
 
             SizedBox(height: 24),
             _Section('7. Kontak'),
