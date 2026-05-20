@@ -132,6 +132,16 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   Future<void> _saveToLocal() async {
     setState(() => _isSaving = true);
     try {
+      final alreadySaved = await _db.isCommunityRecipeSaved(
+        widget.recipe.title, widget.recipe.category);
+      if (!mounted) return;
+      if (alreadySaved) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Resep ini sudah ada di koleksi kamu.'),
+        ));
+        setState(() => _isSaving = false);
+        return;
+      }
       await _db.insertRecipe(widget.recipe.toRecipe());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

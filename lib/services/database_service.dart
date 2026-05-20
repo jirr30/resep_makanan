@@ -137,6 +137,18 @@ class DatabaseService {
     return db.insert('recipes', recipe.toMap());
   }
 
+  // Cek apakah resep komunitas sudah pernah disimpan (by title + category)
+  Future<bool> isCommunityRecipeSaved(String title, String category) async {
+    try {
+      final db = await database;
+      final rows = await db.query('recipes',
+          where: 'title = ? AND category = ?',
+          whereArgs: [title, category],
+          limit: 1);
+      return rows.isNotEmpty;
+    } catch (_) { return false; }
+  }
+
   Future<void> updateRecipe(Recipe recipe) async {
     final db = await database;
     await db.update('recipes', recipe.toMap(), where: 'id = ?', whereArgs: [recipe.id]);

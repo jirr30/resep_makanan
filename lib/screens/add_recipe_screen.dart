@@ -92,25 +92,46 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
       fat:         nutrition?.fat      ?? 0,
     );
 
-    final id = await _db.insertRecipe(recipe);
+    try {
+      final id = await _db.insertRecipe(recipe);
 
-    if (_shareToCommunity && FirebaseAuth.instance.currentUser != null) {
-      final firestoreId = await FirestoreService().publishRecipe(recipe);
-      if (firestoreId != null) {
-        // Simpan firestoreId agar resep tidak bisa dipublish ulang
-        recipe = recipe.copyWith(id: id, firestoreId: firestoreId);
-        await _db.updateRecipe(recipe);
+      bool sharedToCommunity = false;
+      if (_shareToCommunity && FirebaseAuth.instance.currentUser != null) {
+        setState(() => _savingMessage = 'Membagikan ke komunitas...');
+        try {
+          final firestoreId = await FirestoreService().publishRecipe(recipe);
+          if (firestoreId != null) {
+            recipe = recipe.copyWith(id: id, firestoreId: firestoreId);
+            await _db.updateRecipe(recipe);
+            sharedToCommunity = true;
+          }
+        } catch (_) {
+          // Simpan berhasil, tapi share gagal — beri tahu user
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Resep disimpan, tapi gagal dibagikan ke komunitas. Coba lagi dari detail resep.'),
+              duration: Duration(seconds: 4),
+            ));
+          }
+        }
       }
-    }
 
-    if (mounted) {
-      final msg = _shareToCommunity
-          ? 'Resep disimpan & dibagikan ke komunitas!'
-          : 'Resep berhasil disimpan!';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: AppTheme.primary),
-      );
-      Navigator.pop(context);
+      if (mounted) {
+        final msg = sharedToCommunity
+            ? 'Resep disimpan & dibagikan ke komunitas!'
+            : 'Resep berhasil disimpan!';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: AppTheme.primary),
+        );
+        Navigator.pop(context);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal menyimpan resep. Coba lagi.')),
+        );
+      }
     }
   }
 

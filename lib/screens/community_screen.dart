@@ -470,8 +470,16 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
           fs: widget.fs,
           showDelete: true,
           onDelete: () async {
-            await widget.fs.deleteRecipe(_recipes[i].id);
-            _load();
+            try {
+              await widget.fs.deleteRecipe(_recipes[i].id);
+              _load();
+            } catch (_) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Gagal menghapus resep. Coba lagi.')),
+                );
+              }
+            }
           },
         ),
       ),

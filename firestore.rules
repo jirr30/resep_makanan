@@ -9,8 +9,14 @@ service cloud.firestore {
       // Hanya user login yang bisa publish resep
       allow create: if request.auth != null;
 
-      // Update hanya untuk field non-sensitif (likes, rating, commentCount)
-      allow update: if request.auth != null;
+      // Pemilik resep boleh update semua field (kecuali authorId tidak boleh diganti)
+      // User lain hanya boleh update field statistik melalui transaksi app
+      allow update: if request.auth != null && (
+        (resource.data.authorId == request.auth.uid &&
+         request.resource.data.authorId == resource.data.authorId) ||
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likes', 'averageRating', 'ratingCount', 'commentCount'])
+      );
 
       // Hapus hanya oleh pemilik resep
       allow delete: if request.auth != null

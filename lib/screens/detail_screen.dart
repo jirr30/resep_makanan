@@ -118,7 +118,7 @@ Dibagikan dari aplikasi ResepKu
     ));
   }
 
-  Future<void> _shareToCommuntiy() async {
+  Future<void> _shareToCommunity() async {
     // Jika sudah pernah dibagikan, tanya apakah ingin bagikan ulang
     if (_recipe.firestoreId != null) {
       final again = await showDialog<bool>(
@@ -358,7 +358,7 @@ Dibagikan dari aplikasi ResepKu
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
-        onPressed: _shareToCommuntiy,
+        onPressed: _shareToCommunity,
         icon: Icon(
           isPublished ? Icons.check_circle : Icons.people_alt_outlined,
           color: isPublished ? Colors.green : AppTheme.primary,
