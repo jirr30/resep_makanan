@@ -200,27 +200,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final s = _stats!;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(children: [
-        _StatCard(
-          label: 'Resep',
-          value: '${s.recipeCount}',
-          icon: Icons.restaurant_menu,
-          color: AppTheme.primary,
-        ),
-        const SizedBox(width: 12),
-        _StatCard(
-          label: 'Total Likes',
-          value: '${s.totalLikes}',
-          icon: Icons.favorite,
-          color: Colors.red,
-        ),
-        const SizedBox(width: 12),
-        _StatCard(
-          label: 'Avg Rating',
-          value: s.averageRating > 0 ? s.averageRating.toStringAsFixed(1) : '-',
-          icon: Icons.star,
-          color: Colors.amber,
-        ),
+      child: Column(children: [
+        Row(children: [
+          _StatCard(
+            label: 'Resep',
+            value: '${s.recipeCount}',
+            icon: Icons.restaurant_menu,
+            color: AppTheme.primary,
+          ),
+          const SizedBox(width: 12),
+          _StatCard(
+            label: 'Total Likes',
+            value: '${s.totalLikes}',
+            icon: Icons.favorite,
+            color: Colors.red,
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          _StatCard(
+            label: 'Total Dilihat',
+            value: _fmtView(s.totalViews),
+            icon: Icons.remove_red_eye_outlined,
+            color: Colors.blueGrey,
+          ),
+          const SizedBox(width: 12),
+          _StatCard(
+            label: 'Avg Rating',
+            value: s.averageRating > 0 ? s.averageRating.toStringAsFixed(1) : '-',
+            icon: Icons.star,
+            color: Colors.amber,
+          ),
+        ]),
       ]),
     );
   }
@@ -253,6 +264,12 @@ class _StatCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _fmtView(int count) {
+  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
+  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
+  return '$count';
 }
 
 class _ProfileRecipeCard extends StatelessWidget {
@@ -303,6 +320,10 @@ class _ProfileRecipeCard extends StatelessWidget {
                 Icon(Icons.comment_outlined, size: 13, color: AppTheme.textSubOn(context)),
                 const SizedBox(width: 4),
                 Text('${recipe.commentCount}', style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
+                const SizedBox(width: 12),
+                Icon(Icons.remove_red_eye_outlined, size: 13, color: AppTheme.textSubOn(context)),
+                const SizedBox(width: 4),
+                Text(_fmtView(recipe.viewCount), style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
               ]),
               if (recipe.publishedAt != null) ...[
                 const SizedBox(height: 4),

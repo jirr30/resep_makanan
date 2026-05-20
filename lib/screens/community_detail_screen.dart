@@ -7,6 +7,12 @@ import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import 'auth_gate_screen.dart';
 
+String _formatViewCount(int count) {
+  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
+  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
+  return '$count';
+}
+
 class CommunityDetailScreen extends StatefulWidget {
   final CommunityRecipe recipe;
   const CommunityDetailScreen({super.key, required this.recipe});
@@ -30,6 +36,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   bool   _ratingLoading = false;
   double _averageRating = 0.0;
   int    _ratingCount   = 0;
+  int    _viewCount     = 0;
 
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
   bool get _isOwner => _currentUserId != null && _currentUserId == widget.recipe.authorId;
@@ -41,14 +48,25 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     _likes          = widget.recipe.likes;
     _averageRating  = widget.recipe.averageRating;
     _ratingCount    = widget.recipe.ratingCount;
+    _viewCount      = widget.recipe.viewCount;
     _loadLikeStatus();
     _loadUserRating();
+    _countView();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _countView() async {
+    try {
+      await _fs.incrementViewCount(widget.recipe.id);
+      if (mounted) setState(() => _viewCount++);
+    } catch (_) {
+      // View count bukan fitur kritis, abaikan jika gagal
+    }
   }
 
   Future<void> _loadLikeStatus() async {
@@ -341,6 +359,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 const Icon(Icons.favorite, color: Colors.red, size: 14),
                 const SizedBox(width: 4),
                 Text('$_likes', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(width: 10),
+                const Icon(Icons.remove_red_eye_outlined, color: Colors.white70, size: 14),
+                const SizedBox(width: 4),
+                Text(_formatViewCount(_viewCount),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
               ]),
             ]),
           ),
@@ -383,6 +406,15 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               'Dibagikan ${DateFormat('d MMM yyyy', 'id_ID').format(widget.recipe.publishedAt!)}',
               style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
             ),
+          Row(children: [
+            Icon(Icons.remove_red_eye_outlined,
+                size: 12, color: AppTheme.textSubOn(context)),
+            const SizedBox(width: 4),
+            Text(
+              '${_formatViewCount(_viewCount)} kali dilihat',
+              style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
+            ),
+          ]),
         ])),
       ]),
     );

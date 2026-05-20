@@ -1076,6 +1076,12 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+String _fmtViewHome(int count) {
+  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
+  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
+  return '$count';
+}
+
 // ── Community Feed Card (main list) ───────────────────────────────────────────
 
 class _CommunityFeedCard extends StatelessWidget {
@@ -1140,6 +1146,8 @@ class _CommunityFeedCard extends StatelessWidget {
                           ? recipe.averageRating.toStringAsFixed(1)
                           : '-',
                       context),
+                  _meta(Icons.remove_red_eye_outlined, Colors.blueGrey,
+                      _fmtViewHome(recipe.viewCount), context),
                   _meta(Icons.timer_outlined, AppTheme.primary,
                       '${recipe.cookingTime} mnt', context),
                   if (recipe.category.isNotEmpty)

@@ -15,7 +15,7 @@ service cloud.firestore {
         (resource.data.authorId == request.auth.uid &&
          request.resource.data.authorId == resource.data.authorId) ||
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['likes', 'averageRating', 'ratingCount', 'commentCount'])
+          .hasOnly(['likes', 'averageRating', 'ratingCount', 'commentCount', 'viewCount'])
       );
 
       // Hapus hanya oleh pemilik resep

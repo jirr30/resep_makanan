@@ -487,6 +487,12 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
   }
 }
 
+String _fmtView(int count) {
+  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
+  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
+  return '$count';
+}
+
 // ─── Community Card ──────────────────────────────────────────────────────────
 
 class _CommunityCard extends StatelessWidget {
@@ -575,6 +581,11 @@ class _CommunityCard extends StatelessWidget {
                 Icon(Icons.comment_outlined, size: 14, color: AppTheme.textSubOn(context)),
                 const SizedBox(width: 4),
                 Text('${recipe.commentCount}',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
+                const SizedBox(width: 10),
+                Icon(Icons.remove_red_eye_outlined, size: 14, color: AppTheme.textSubOn(context)),
+                const SizedBox(width: 4),
+                Text(_fmtView(recipe.viewCount),
                     style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
               ]),
             ]),

@@ -141,6 +141,14 @@ class FirestoreService {
 
   // ─── Like ─────────────────────────────────────────────────────────────────────
 
+  // ─── View Count ───────────────────────────────────────────────────────────────
+
+  Future<void> incrementViewCount(String docId) async {
+    await _recipes.doc(docId).update({'viewCount': FieldValue.increment(1)});
+  }
+
+  // ─── Like ─────────────────────────────────────────────────────────────────────
+
   Future<void> toggleLike(String docId, bool liked) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -284,6 +292,7 @@ class FirestoreService {
     final recipes = snap.docs.map(CommunityRecipe.fromFirestore).toList();
 
     final totalLikes   = recipes.fold<int>(0, (s, r) => s + r.likes);
+    final totalViews   = recipes.fold<int>(0, (s, r) => s + r.viewCount);
     final totalRatings = recipes.fold<int>(0, (s, r) => s + r.ratingCount);
     final weightedSum  = recipes.fold<double>(0, (s, r) => s + r.averageRating * r.ratingCount);
     final avgRating    = totalRatings > 0 ? weightedSum / totalRatings : 0.0;
@@ -291,6 +300,7 @@ class FirestoreService {
     return UserProfileStats(
       recipeCount:   recipes.length,
       totalLikes:    totalLikes,
+      totalViews:    totalViews,
       averageRating: avgRating,
       recipes:       recipes,
     );
@@ -327,11 +337,13 @@ class PagedResult {
 class UserProfileStats {
   final int                  recipeCount;
   final int                  totalLikes;
+  final int                  totalViews;
   final double               averageRating;
   final List<CommunityRecipe> recipes;
   const UserProfileStats({
     required this.recipeCount,
     required this.totalLikes,
+    required this.totalViews,
     required this.averageRating,
     required this.recipes,
   });
@@ -390,6 +402,7 @@ class CommunityRecipe {
   final DateTime?      publishedAt;
   final int            likes;
   final int            commentCount;
+  final int            viewCount;
 
   const CommunityRecipe({
     required this.id,
@@ -414,6 +427,7 @@ class CommunityRecipe {
     this.publishedAt,
     required this.likes,
     this.commentCount = 0,
+    this.viewCount = 0,
   });
 
   factory CommunityRecipe.fromFirestore(DocumentSnapshot doc) {
@@ -443,6 +457,7 @@ class CommunityRecipe {
       publishedAt:  (d['publishedAt'] as Timestamp?)?.toDate(),
       likes:        d['likes']        as int? ?? 0,
       commentCount: d['commentCount'] as int? ?? 0,
+      viewCount:    d['viewCount']    as int? ?? 0,
     );
   }
 
