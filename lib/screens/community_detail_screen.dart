@@ -67,6 +67,10 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   }
 
   Future<void> _countView() async {
+    // Jangan hitung view milik sendiri
+    if (_isOwner) return;
+    // Harus login untuk bisa update Firestore (sesuai security rules)
+    if (_currentUserId == null) return;
     try {
       await _fs.incrementViewCount(widget.recipe.id);
       if (mounted) setState(() => _viewCount++);

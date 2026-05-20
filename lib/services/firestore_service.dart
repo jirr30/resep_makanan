@@ -146,7 +146,12 @@ class FirestoreService {
 
   // ─── View Count ───────────────────────────────────────────────────────────────
 
+  // Dedup per sesi: satu resep hanya dihitung sekali selama app berjalan
+  static final _viewedThisSession = <String>{};
+
   Future<void> incrementViewCount(String docId) async {
+    if (_viewedThisSession.contains(docId)) return;
+    _viewedThisSession.add(docId);
     await _recipes.doc(docId).update({'viewCount': FieldValue.increment(1)});
   }
 
