@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/recipe.dart';
 import '../providers/auth_provider.dart';
@@ -8,7 +10,6 @@ import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
-import '../widgets/recipe_card.dart';
 import '../widgets/shimmer_card.dart';
 import '../widgets/error_view.dart';
 import 'auth_gate_screen.dart';
@@ -35,24 +36,37 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _db = DatabaseService();
   final _fs = FirestoreService();
-  List<Recipe> _all = [];
-  List<Recipe> _filtered = [];
+
+  // Local (SQLite) — hanya untuk karousel pribadi & stats
   List<String> _customCategories = [];
   String _selectedCategory = 'Semua';
-  SortOption _sort = SortOption.newest;
-  Set<String> _difficultyFilter = {};
-  int _maxTime = 999;
   bool _loading = true;
-  bool _loadingCommunity = true;
-  bool _firestoreLoaded = false;
-  bool _hasError = false;
   int _favCount = 0;
   List<Recipe> _allRecipes = [];
   List<Recipe> _recentRecipes = [];
   List<Recipe> _favoriteRecipes = [];
+
+  // Firestore carousels
+  bool _loadingCommunity = true;
+  bool _firestoreLoaded = false;
   List<CommunityRecipe> _trendingCommunity = [];
   List<CommunityRecipe> _latestCommunity = [];
   int _communityCount = 0;
+
+  // Community feed (main list — paginated Firestore)
+  List<CommunityRecipe> _communityFeed = [];
+  List<CommunityRecipe> _communityFiltered = [];
+  DocumentSnapshot? _lastFeedDoc;
+  bool _loadingFeed = true;
+  bool _loadingMoreFeed = false;
+  bool _hasMoreFeed = true;
+  bool _feedError = false;
+
+  // Sort & filter (applied client-side to loaded feed page)
+  SortOption _sort = SortOption.newest;
+  Set<String> _difficultyFilter = {};
+  int _maxTime = 999;
+
   int _bottomNavIndex = 0;
 
   @override
@@ -61,24 +75,21 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
   }
 
-  // Full refresh — Firestore hanya di-fetch jika belum pernah load atau dipaksa.
+  // ── Loading ───────────────────────────────────────────────────────────────────
+
   Future<void> _load({bool forceFirestore = false}) async {
     if (forceFirestore || !_firestoreLoaded) {
-      await Future.wait([_loadLocal(), _loadCommunity()]);
+      await Future.wait([_loadLocal(), _loadCommunity(), _loadFeedPage(reset: true)]);
     } else {
-      await _loadLocal();
+      await Future.wait([_loadLocal(), _loadFeedPage(reset: true)]);
     }
   }
 
-  // Hanya SQLite — dipakai saat ganti kategori, toggle favorit, tambah/hapus resep.
   Future<void> _loadLocal() async {
-    if (mounted) setState(() { _loading = true; _hasError = false; });
+    if (mounted) setState(() => _loading = true);
     try {
-      final cats    = await _db.getCustomCategories();
-      final all     = await _db.getAllRecipes();
-      final recipes = _selectedCategory == 'Semua'
-          ? all
-          : await _db.getByCategory(_selectedCategory);
+      final cats      = await _db.getCustomCategories();
+      final all       = await _db.getAllRecipes();
       final favorites = all.where((r) => r.isFavorite).toList();
       final recent    = (List<Recipe>.from(all)
             ..sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0)))
@@ -88,20 +99,17 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _customCategories = cats;
           _allRecipes       = all;
-          _all              = recipes;
           _favCount         = favorites.length;
           _recentRecipes    = recent;
           _favoriteRecipes  = favorites;
-          _applyFilters();
-          _loading = false;
+          _loading          = false;
         });
       }
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _hasError = true; });
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  // Hanya Firestore — dipakai saat kembali dari CommunityScreen atau pull-to-refresh.
   Future<void> _loadCommunity() async {
     if (mounted) setState(() => _loadingCommunity = true);
     try {
@@ -112,9 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final count     = await _fs.getCommunityRecipeCount()
           .catchError((_) => 0);
       final trendingIds = trending.map((r) => r.id).toSet();
-      final latest      = latestRaw
-          .where((r) => !trendingIds.contains(r.id))
-          .toList();
+      final latest      = latestRaw.where((r) => !trendingIds.contains(r.id)).toList();
       if (mounted) {
         setState(() {
           _trendingCommunity = trending;
@@ -129,8 +135,54 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _applyFilters() {
-    var list = List<Recipe>.from(_all);
+  Future<void> _loadFeedPage({bool reset = false}) async {
+    if (!reset && (_loadingMoreFeed || !_hasMoreFeed)) return;
+    if (reset) {
+      if (mounted) {
+        setState(() {
+          _loadingFeed   = true;
+          _feedError     = false;
+          _communityFeed = [];
+          _lastFeedDoc   = null;
+          _hasMoreFeed   = true;
+        });
+      }
+    } else {
+      if (mounted) setState(() => _loadingMoreFeed = true);
+    }
+    try {
+      final cat    = _selectedCategory == 'Semua' ? null : _selectedCategory;
+      final result = await _fs.getRecipesPaged(
+        startAfter: reset ? null : _lastFeedDoc,
+        category: cat,
+      );
+      if (mounted) {
+        setState(() {
+          if (reset) {
+            _communityFeed = result.recipes;
+          } else {
+            _communityFeed.addAll(result.recipes);
+          }
+          _lastFeedDoc      = result.lastDoc;
+          _hasMoreFeed      = result.hasMore;
+          _loadingFeed      = false;
+          _loadingMoreFeed  = false;
+          _applyFeedFilters();
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadingFeed     = false;
+          _loadingMoreFeed = false;
+          if (reset) _feedError = true;
+        });
+      }
+    }
+  }
+
+  void _applyFeedFilters() {
+    var list = List<CommunityRecipe>.from(_communityFeed);
     if (_difficultyFilter.isNotEmpty) {
       list = list.where((r) => _difficultyFilter.contains(r.difficulty)).toList();
     }
@@ -139,31 +191,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     switch (_sort) {
       case SortOption.newest:     break;
-      case SortOption.ratingDesc: list.sort((a, b) => b.rating.compareTo(a.rating));
+      case SortOption.ratingDesc: list.sort((a, b) => b.averageRating.compareTo(a.averageRating));
       case SortOption.timeAsc:    list.sort((a, b) => a.cookingTime.compareTo(b.cookingTime));
       case SortOption.nameAsc:    list.sort((a, b) => a.title.compareTo(b.title));
     }
-    _filtered = list;
-  }
-
-  Future<void> _toggleFavorite(Recipe recipe) async {
-    await _db.toggleFavorite(recipe.id!, !recipe.isFavorite);
-    _loadLocal();
-  }
-
-  Future<void> _deleteWithUndo(Recipe recipe) async {
-    await _db.deleteRecipe(recipe.id!);
-    _loadLocal();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('"${recipe.title}" dihapus'),
-      action: SnackBarAction(
-        label: 'Batalkan',
-        textColor: Colors.amber,
-        onPressed: () async { await _db.insertRecipe(recipe); _loadLocal(); },
-      ),
-      duration: const Duration(seconds: 5),
-    ));
+    _communityFiltered = list;
   }
 
   void _showSortFilter() {
@@ -175,7 +207,12 @@ class _HomeScreenState extends State<HomeScreen> {
         difficultyFilter: _difficultyFilter,
         maxTime: _maxTime,
         onApply: (sort, diff, maxTime) {
-          setState(() { _sort = sort; _difficultyFilter = diff; _maxTime = maxTime; _applyFilters(); });
+          setState(() {
+            _sort            = sort;
+            _difficultyFilter = diff;
+            _maxTime         = maxTime;
+            _applyFeedFilters();
+          });
         },
       ),
     );
@@ -233,7 +270,6 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
         .then((_) {
           setState(() => _bottomNavIndex = 0);
-          // Komunitas bisa ubah data Firestore, screen lain cukup local
           if (index == 1) {
             _load(forceFirestore: true);
           } else {
@@ -241,6 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
   }
+
+  // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -280,155 +318,161 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => _load(forceFirestore: true),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _buildGreetingHeader()),
-            SliverToBoxAdapter(child: _buildSearchBar()),
-            SliverToBoxAdapter(child: _buildQuickStats()),
-            // Community carousels — shimmer saat loading, konten saat siap
-            if (_loadingCommunity) ...[
-              SliverToBoxAdapter(child: _buildCarouselShimmer(
-                'Populer di Komunitas',
-                Icons.local_fire_department,
-                Colors.orange,
-              )),
-              SliverToBoxAdapter(child: _buildCarouselShimmer(
-                'Terbaru dari Komunitas',
-                Icons.public,
-                Colors.teal,
-              )),
-            ] else ...[
-              if (_trendingCommunity.isNotEmpty)
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (scroll) {
+          if (scroll is ScrollEndNotification &&
+              scroll.metrics.extentAfter < 300 &&
+              !_loadingMoreFeed &&
+              _hasMoreFeed &&
+              !_loadingFeed) {
+            _loadFeedPage();
+          }
+          return false;
+        },
+        child: RefreshIndicator(
+          onRefresh: () => _load(forceFirestore: true),
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: _buildGreetingHeader()),
+              SliverToBoxAdapter(child: _buildSearchBar()),
+              SliverToBoxAdapter(child: _buildQuickStats()),
+
+              // Karousel komunitas
+              if (_loadingCommunity) ...[
+                SliverToBoxAdapter(child: _buildCarouselShimmer(
+                  'Populer di Komunitas', Icons.local_fire_department, Colors.orange)),
+                SliverToBoxAdapter(child: _buildCarouselShimmer(
+                  'Terbaru dari Komunitas', Icons.public, Colors.teal)),
+              ] else ...[
+                if (_trendingCommunity.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: _buildCommunityCarousel(
+                      title: 'Populer di Komunitas',
+                      icon: Icons.local_fire_department,
+                      iconColor: Colors.orange,
+                      recipes: _trendingCommunity,
+                      onViewAll: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const CommunityScreen()))
+                          .then((_) => _load(forceFirestore: true)),
+                    ),
+                  ),
+                if (_latestCommunity.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: _buildCommunityCarousel(
+                      title: 'Terbaru dari Komunitas',
+                      icon: Icons.public,
+                      iconColor: Colors.teal,
+                      recipes: _latestCommunity,
+                      onViewAll: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const CommunityScreen()))
+                          .then((_) => _load(forceFirestore: true)),
+                    ),
+                  ),
+              ],
+
+              // Karousel lokal
+              if (!_loading && _recentRecipes.isNotEmpty)
                 SliverToBoxAdapter(
-                  child: _buildCommunityCarousel(
-                    title: 'Populer di Komunitas',
-                    icon: Icons.local_fire_department,
-                    iconColor: Colors.orange,
-                    recipes: _trendingCommunity,
-                    onViewAll: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const CommunityScreen()),
-                    ).then((_) => _load(forceFirestore: true)),
+                  child: _buildCarousel(
+                    title: 'Terakhir Ditambahkan',
+                    icon: Icons.access_time_outlined,
+                    recipes: _recentRecipes,
                   ),
                 ),
-              if (_latestCommunity.isNotEmpty)
+              if (!_loading && _favoriteRecipes.isNotEmpty)
                 SliverToBoxAdapter(
-                  child: _buildCommunityCarousel(
-                    title: 'Terbaru dari Komunitas',
-                    icon: Icons.public,
-                    iconColor: Colors.teal,
-                    recipes: _latestCommunity,
-                    onViewAll: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const CommunityScreen()),
-                    ).then((_) => _load(forceFirestore: true)),
+                  child: _buildCarousel(
+                    title: 'Favorit Kamu',
+                    icon: Icons.favorite_outline,
+                    iconColor: Colors.red,
+                    recipes: _favoriteRecipes,
+                    onViewAll: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const FavoritesScreen()))
+                        .then((_) => _loadLocal()),
                   ),
                 ),
-            ],
-            if (!_loading && _recentRecipes.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildCarousel(
-                  title: 'Terakhir Ditambahkan',
-                  icon: Icons.access_time_outlined,
-                  recipes: _recentRecipes,
-                ),
-              ),
-            if (!_loading && _favoriteRecipes.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildCarousel(
-                  title: 'Favorit Kamu',
-                  icon: Icons.favorite_outline,
-                  iconColor: Colors.red,
-                  recipes: _favoriteRecipes,
-                  onViewAll: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const FavoritesScreen()),
-                  ).then((_) => _loadLocal()),
-                ),
-              ),
-            SliverToBoxAdapter(child: _buildCategories()),
-            if (_hasActiveFilter) SliverToBoxAdapter(child: _buildActiveFilterChips()),
-            SliverToBoxAdapter(child: _buildSectionHeader()),
-            if (_hasError)
-              SliverFillRemaining(
-                child: ErrorView(
-                  message: 'Gagal memuat resep.\nCoba lagi.',
-                  onRetry: () => _load(forceFirestore: true),
-                ),
-              )
-            else if (_loading)
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, __) => const ShimmerCard(),
-                  childCount: 4,
-                ),
-              )
-            else if (_filtered.isEmpty)
-              SliverFillRemaining(
-                child: EmptyView(
-                  icon: Icons.no_food,
-                  title: 'Tidak Ada Resep',
-                  subtitle: _hasActiveFilter
-                      ? 'Coba ubah filter atau kategori'
-                      : 'Belum ada resep.\nTambahkan resep pertamamu!',
-                  actionLabel: _hasActiveFilter ? null : 'Tambah Resep',
-                  onAction: _hasActiveFilter
-                      ? null
-                      : () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
-                          ).then((_) => _loadLocal()),
-                ),
-              )
-            else
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) => Dismissible(
-                    key: Key('recipe_${_filtered[i].id}'),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                          color: Colors.red, borderRadius: BorderRadius.circular(16)),
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                    confirmDismiss: (_) async => showDialog<bool>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Hapus Resep?'),
-                        content: Text('Hapus "${_filtered[i].title}"?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Batal'),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Hapus'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    onDismissed: (_) => _deleteWithUndo(_filtered[i]),
-                    child: RecipeCard(
-                      recipe: _filtered[i],
+
+              // Filter chips & header
+              SliverToBoxAdapter(child: _buildCategories()),
+              if (_hasActiveFilter)
+                SliverToBoxAdapter(child: _buildActiveFilterChips()),
+              SliverToBoxAdapter(child: _buildSectionHeader()),
+
+              // Feed utama — semua resep komunitas
+              if (_feedError)
+                SliverFillRemaining(
+                  child: ErrorView(
+                    message: 'Gagal memuat resep komunitas.\nCoba lagi.',
+                    onRetry: () => _loadFeedPage(reset: true),
+                  ),
+                )
+              else if (_loadingFeed)
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, __) => const ShimmerCard(),
+                    childCount: 6,
+                  ),
+                )
+              else if (_communityFiltered.isEmpty)
+                SliverFillRemaining(
+                  child: EmptyView(
+                    icon: Icons.public_off,
+                    title: 'Belum Ada Resep',
+                    subtitle: _hasActiveFilter
+                        ? 'Coba ubah filter atau kategori'
+                        : 'Belum ada resep di komunitas.\nJadi yang pertama berbagi!',
+                    actionLabel: _hasActiveFilter ? null : 'Buka Komunitas',
+                    onAction: _hasActiveFilter
+                        ? null
+                        : () => Navigator.push(context,
+                                MaterialPageRoute(builder: (_) => const CommunityScreen()))
+                            .then((_) => _load(forceFirestore: true)),
+                  ),
+                )
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => _CommunityFeedCard(
+                      recipe: _communityFiltered[i],
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => DetailScreen(recipe: _filtered[i])),
-                      ).then((_) => _loadLocal()),
-                      onFavorite: () => _toggleFavorite(_filtered[i]),
+                        MaterialPageRoute(
+                          builder: (_) => CommunityDetailScreen(recipe: _communityFiltered[i]),
+                        ),
+                      ).then((_) => _load(forceFirestore: true)),
+                    ),
+                    childCount: _communityFiltered.length,
+                  ),
+                ),
+
+              // Load more footer
+              if (_loadingMoreFeed)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: AppTheme.primary, strokeWidth: 2),
                     ),
                   ),
-                  childCount: _filtered.length,
+                )
+              else if (!_hasMoreFeed && _communityFiltered.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Text(
+                        'Semua ${_communityFiltered.length} resep sudah ditampilkan',
+                        style: TextStyle(
+                            fontSize: 12, color: AppTheme.textSubOn(context)),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            const SliverToBoxAdapter(child: SizedBox(height: 96)),
-          ],
+
+              const SliverToBoxAdapter(child: SizedBox(height: 96)),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -438,8 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ).then((_) => _loadLocal()),
         backgroundColor: AppTheme.primary,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Tambah Resep',
-            style: TextStyle(color: Colors.white)),
+        label: const Text('Tambah Resep', style: TextStyle(color: Colors.white)),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _bottomNavIndex,
@@ -469,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Greeting Header ────────────────────────────────────────────────────────
+  // ── Greeting Header ───────────────────────────────────────────────────────────
 
   Widget _buildGreetingHeader() {
     final user = FirebaseAuth.instance.currentUser;
@@ -497,11 +540,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              '$greeting, $firstName! 👋',
-              style: const TextStyle(
-                  color: Colors.white70, fontSize: 13),
-            ),
+            Text('$greeting, $firstName! 👋',
+                style: const TextStyle(color: Colors.white70, fontSize: 13)),
             const SizedBox(height: 4),
             const Text(
               'Mau masak apa\nhari ini?',
@@ -526,14 +566,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Search Bar ─────────────────────────────────────────────────────────────
+  // ── Search Bar ────────────────────────────────────────────────────────────────
 
   Widget _buildSearchBar() {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const SearchScreen()),
-      ).then((_) => _load()),
+      ).then((_) => _loadLocal()),
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
@@ -543,10 +583,9 @@ class _HomeScreenState extends State<HomeScreen> {
           border: Border.all(color: Theme.of(context).dividerColor),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2)),
           ],
         ),
         child: Row(children: [
@@ -563,7 +602,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Quick Stats ────────────────────────────────────────────────────────────
+  // ── Quick Stats ───────────────────────────────────────────────────────────────
 
   Widget _buildQuickStats() {
     return Padding(
@@ -572,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _StatCard(
           icon: Icons.menu_book_outlined,
           value: _loading ? '-' : '${_allRecipes.length}',
-          label: 'Total Resep',
+          label: 'Resep Saya',
           color: AppTheme.primary,
         ),
         const SizedBox(width: 12),
@@ -601,7 +640,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Category Chips ─────────────────────────────────────────────────────────
+  // ── Category Chips ────────────────────────────────────────────────────────────
 
   Widget _buildCategories() {
     return Padding(
@@ -633,11 +672,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               );
             }
-            final cat = _allCategories[i];
+            final cat      = _allCategories[i];
             final selected = cat == _selectedCategory;
             final isCustom = !AppConstants.categories.contains(cat);
             return GestureDetector(
-              onTap: () { setState(() => _selectedCategory = cat); _loadLocal(); },
+              onTap: () {
+                setState(() => _selectedCategory = cat);
+                _loadFeedPage(reset: true);
+              },
               onLongPress: isCustom
                   ? () async {
                       final confirm = await showDialog<bool>(
@@ -648,14 +690,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               'Resep dengan kategori ini tidak ikut terhapus.'),
                           actions: [
                             TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Batal'),
-                            ),
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Batal')),
                             TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Hapus',
-                                  style: TextStyle(color: Colors.red)),
-                            ),
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Hapus',
+                                    style: TextStyle(color: Colors.red))),
                           ],
                         ),
                       );
@@ -665,6 +705,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           setState(() => _selectedCategory = 'Semua');
                         }
                         _loadLocal();
+                        _loadFeedPage(reset: true);
                       }
                     }
                   : null,
@@ -672,8 +713,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color:
-                      selected ? AppTheme.primary : Colors.transparent,
+                  color: selected ? AppTheme.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                       color: selected
@@ -687,8 +727,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: selected
                         ? Colors.white
                         : Theme.of(context).textTheme.bodyMedium?.color,
-                    fontWeight:
-                        selected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                     fontSize: 13,
                   ),
                 ),
@@ -712,17 +751,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? 'Waktu ↑'
                     : 'A–Z',
             onDelete: () {
-              setState(() { _sort = SortOption.newest; _applyFilters(); });
+              setState(() { _sort = SortOption.newest; _applyFeedFilters(); });
             },
           ),
         ..._difficultyFilter.map((d) => _filterChip(d,
             onDelete: () {
-              setState(() { _difficultyFilter.remove(d); _applyFilters(); });
+              setState(() { _difficultyFilter.remove(d); _applyFeedFilters(); });
             })),
         if (_maxTime < 999)
           _filterChip('≤$_maxTime mnt',
               onDelete: () {
-                setState(() { _maxTime = 999; _applyFilters(); });
+                setState(() { _maxTime = 999; _applyFeedFilters(); });
               }),
       ]),
     );
@@ -740,7 +779,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Carousel Shimmer Placeholder ─────────────────────────────────────────
+  // ── Section Header ────────────────────────────────────────────────────────────
+
+  Widget _buildSectionHeader() {
+    final label = _selectedCategory == 'Semua'
+        ? 'Resep Komunitas'
+        : _selectedCategory;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Row(children: [
+        const Icon(Icons.public, size: 18, color: AppTheme.primary),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textOn(context),
+          ),
+        ),
+        const SizedBox(width: 8),
+        if (!_loadingFeed && _communityFiltered.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '${_communityFiltered.length}${_hasMoreFeed ? '+' : ''}',
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  // ── Carousel Shimmer ──────────────────────────────────────────────────────────
 
   Widget _buildCarouselShimmer(String title, IconData icon, Color iconColor) {
     return Column(
@@ -753,10 +831,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 6),
             Text(title,
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textOn(context),
-                )),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textOn(context))),
           ]),
         ),
         SizedBox(
@@ -772,7 +849,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Community Carousel ────────────────────────────────────────────────────
+  // ── Community Carousel ────────────────────────────────────────────────────────
 
   Widget _buildCommunityCarousel({
     required String title,
@@ -789,22 +866,17 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(children: [
             Icon(icon, size: 18, color: iconColor ?? AppTheme.primary),
             const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textOn(context),
-              ),
-            ),
+            Text(title,
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textOn(context))),
             const Spacer(),
             if (onViewAll != null)
               GestureDetector(
                 onTap: onViewAll,
-                child: const Text(
-                  'Lihat Semua',
-                  style: TextStyle(fontSize: 13, color: AppTheme.primary),
-                ),
+                child: const Text('Lihat Semua',
+                    style: TextStyle(fontSize: 13, color: AppTheme.primary)),
               ),
           ]),
         ),
@@ -816,11 +888,10 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: recipes.length,
             itemBuilder: (_, i) => _CommunityCarouselCard(
               recipe: recipes[i],
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => CommunityDetailScreen(recipe: recipes[i])),
-              ).then((_) => _load()),
+              onTap: () => Navigator.push(context,
+                      MaterialPageRoute(
+                          builder: (_) => CommunityDetailScreen(recipe: recipes[i])))
+                  .then((_) => _load()),
             ),
           ),
         ),
@@ -828,42 +899,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Section Header ────────────────────────────────────────────────────────
-
-  Widget _buildSectionHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(children: [
-        Text(
-          _selectedCategory == 'Semua' ? 'Semua Resep' : _selectedCategory,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textOn(context),
-          ),
-        ),
-        const SizedBox(width: 8),
-        if (!_loading)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '${_filtered.length}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppTheme.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-      ]),
-    );
-  }
-
-  // ── Carousel ──────────────────────────────────────────────────────────────
+  // ── Local Carousel ────────────────────────────────────────────────────────────
 
   Widget _buildCarousel({
     required String title,
@@ -880,22 +916,17 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(children: [
             Icon(icon, size: 18, color: iconColor ?? AppTheme.primary),
             const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textOn(context),
-              ),
-            ),
+            Text(title,
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textOn(context))),
             const Spacer(),
             if (onViewAll != null)
               GestureDetector(
                 onTap: onViewAll,
-                child: const Text(
-                  'Lihat Semua',
-                  style: TextStyle(fontSize: 13, color: AppTheme.primary),
-                ),
+                child: const Text('Lihat Semua',
+                    style: TextStyle(fontSize: 13, color: AppTheme.primary)),
               ),
           ]),
         ),
@@ -907,17 +938,17 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: recipes.length,
             itemBuilder: (_, i) => _CarouselCard(
               recipe: recipes[i],
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => DetailScreen(recipe: recipes[i])),
-              ).then((_) => _load()),
+              onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => DetailScreen(recipe: recipes[i])))
+                  .then((_) => _loadLocal()),
             ),
           ),
         ),
       ],
     );
   }
+
+  // ── Notification Panel ────────────────────────────────────────────────────────
 
   void _showNotificationPanel(BuildContext outerCtx) {
     final future = _fs.getActivityNotifications();
@@ -936,8 +967,7 @@ class _HomeScreenState extends State<HomeScreen> {
             margin: const EdgeInsets.only(top: 12, bottom: 8),
             width: 40, height: 4,
             decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -960,12 +990,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (items.isEmpty) {
                   return Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.notifications_none,
-                          size: 56, color: Colors.grey[400]),
+                      Icon(Icons.notifications_none, size: 56, color: Colors.grey[400]),
                       const SizedBox(height: 12),
                       Text('Belum ada aktivitas komunitas',
-                          style: TextStyle(
-                              color: Colors.grey[500], fontSize: 14)),
+                          style: TextStyle(color: Colors.grey[500], fontSize: 14)),
                     ]),
                   );
                 }
@@ -979,13 +1007,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () {
                       Navigator.of(sheetCtx).pop();
                       if (items[i].recipe != null) {
-                        Navigator.push(
-                          outerCtx,
-                          MaterialPageRoute(
-                            builder: (_) => CommunityDetailScreen(
-                                recipe: items[i].recipe!),
-                          ),
-                        ).then((_) => _load(forceFirestore: true));
+                        Navigator.push(outerCtx, MaterialPageRoute(
+                          builder: (_) =>
+                              CommunityDetailScreen(recipe: items[i].recipe!),
+                        )).then((_) => _load(forceFirestore: true));
                       }
                     },
                   ),
@@ -999,7 +1024,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ── Stat Card ──────────────────────────────────────────────────────────────────
+// ── Stat Card ─────────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final IconData icon;
@@ -1033,9 +1058,7 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(value,
                 style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: color)),
+                    fontSize: 18, fontWeight: FontWeight.bold, color: color)),
             const SizedBox(height: 2),
             Text(label,
                 style: TextStyle(
@@ -1043,13 +1066,128 @@ class _StatCard extends StatelessWidget {
                 textAlign: TextAlign.center),
             if (onTap != null) ...[
               const SizedBox(height: 2),
-              Icon(Icons.arrow_forward_ios, size: 9, color: color.withValues(alpha: 0.6)),
+              Icon(Icons.arrow_forward_ios,
+                  size: 9, color: color.withValues(alpha: 0.6)),
             ],
           ]),
         ),
       ),
     );
   }
+}
+
+// ── Community Feed Card (main list) ───────────────────────────────────────────
+
+class _CommunityFeedCard extends StatelessWidget {
+  final CommunityRecipe recipe;
+  final VoidCallback onTap;
+  const _CommunityFeedCard({required this.recipe, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: recipe.imageUrl.isNotEmpty
+                  ? Image.network(recipe.imageUrl,
+                      width: 80, height: 80, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _placeholder())
+                  : _placeholder(),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(recipe.title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 4),
+                Row(children: [
+                  CircleAvatar(
+                    radius: 9,
+                    backgroundImage: recipe.authorPhoto.isNotEmpty
+                        ? NetworkImage(recipe.authorPhoto)
+                        : null,
+                    backgroundColor: AppTheme.primary.withValues(alpha: 0.2),
+                    child: recipe.authorPhoto.isEmpty
+                        ? const Icon(Icons.person, size: 11, color: AppTheme.primary)
+                        : null,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(recipe.authorName,
+                        style: TextStyle(
+                            fontSize: 11, color: AppTheme.textSubOn(context)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+                Wrap(spacing: 10, children: [
+                  _meta(Icons.favorite, Colors.red,
+                      '${recipe.likes}', context),
+                  _meta(Icons.star, Colors.amber,
+                      recipe.averageRating > 0
+                          ? recipe.averageRating.toStringAsFixed(1)
+                          : '-',
+                      context),
+                  _meta(Icons.timer_outlined, AppTheme.primary,
+                      '${recipe.cookingTime} mnt', context),
+                  if (recipe.category.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(recipe.category,
+                          style: const TextStyle(
+                              fontSize: 10, color: AppTheme.primary)),
+                    ),
+                ]),
+                if (recipe.publishedAt != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
+                    style: TextStyle(
+                        fontSize: 10, color: AppTheme.textSubOn(context)),
+                  ),
+                ],
+              ]),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _meta(IconData icon, Color color, String text, BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 12, color: color),
+      const SizedBox(width: 2),
+      Text(text,
+          style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
+    ]);
+  }
+
+  Widget _placeholder() => Container(
+        width: 80, height: 80,
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.restaurant, color: AppTheme.primary),
+      );
 }
 
 // ── Notification Tile ─────────────────────────────────────────────────────────
@@ -1076,43 +1214,35 @@ class _RealNotifTile extends StatelessWidget {
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: notif.imageUrl.isNotEmpty
-            ? Image.network(
-                notif.imageUrl,
+            ? Image.network(notif.imageUrl,
                 width: 48, height: 48, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _placeholder(),
-              )
+                errorBuilder: (_, __, ___) => _placeholder())
             : _placeholder(),
       ),
-      title: Text(
-        notif.title,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-      ),
+      title: Text(notif.title,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
       subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const SizedBox(height: 2),
-        Text(
-          notif.body,
-          style: const TextStyle(fontSize: 13),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        Text(notif.body,
+            style: const TextStyle(fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
         const SizedBox(height: 4),
-        Text(
-          _formatTimeAgo(notif.time),
-          style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context)),
-        ),
+        Text(_formatTimeAgo(notif.time),
+            style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
       ]),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     );
   }
 
   Widget _placeholder() => Container(
-    width: 48, height: 48,
-    decoration: BoxDecoration(
-      color: AppTheme.primary.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: const Icon(Icons.restaurant, color: AppTheme.primary, size: 24),
-  );
+        width: 48, height: 48,
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(Icons.restaurant, color: AppTheme.primary, size: 24),
+      );
 }
 
 // ── App Drawer ────────────────────────────────────────────────────────────────
@@ -1139,10 +1269,8 @@ class _AppDrawer extends StatelessWidget {
               onPressed: () => Navigator.pop(context, false),
               child: const Text('Batal')),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Keluar',
-                style: TextStyle(color: Colors.red)),
-          ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Keluar', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -1166,7 +1294,6 @@ class _AppDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-
     return Drawer(
       child: SafeArea(
         child: Column(children: [
@@ -1183,27 +1310,22 @@ class _AppDrawer extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               CircleAvatar(
                 radius: 36,
-                backgroundImage: user?.photoURL != null
-                    ? NetworkImage(user!.photoURL!)
-                    : null,
+                backgroundImage:
+                    user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
                 backgroundColor: Colors.white.withValues(alpha: 0.3),
                 child: user?.photoURL == null
                     ? const Icon(Icons.person, size: 36, color: Colors.white)
                     : null,
               ),
               const SizedBox(height: 14),
-              Text(
-                user?.displayName ?? 'Pengguna',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold),
-              ),
+              Text(user?.displayName ?? 'Pengguna',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
               const SizedBox(height: 2),
-              Text(
-                user?.email ?? '',
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
+              Text(user?.email ?? '',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
             ]),
           ),
           Expanded(
@@ -1211,47 +1333,39 @@ class _AppDrawer extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
                 _DrawerItem(
-                  icon: Icons.person_outline,
-                  label: 'Profil Saya',
-                  onTap: () => _go(context, const ProfileScreen()),
-                ),
+                    icon: Icons.person_outline,
+                    label: 'Profil Saya',
+                    onTap: () => _go(context, const ProfileScreen())),
                 _DrawerItem(
-                  icon: Icons.people_outline,
-                  label: 'Komunitas',
-                  onTap: () => _go(context, const CommunityScreen()),
-                ),
+                    icon: Icons.people_outline,
+                    label: 'Komunitas',
+                    onTap: () => _go(context, const CommunityScreen())),
                 _DrawerItem(
-                  icon: Icons.calendar_month_outlined,
-                  label: 'Meal Planner',
-                  onTap: () => _go(context, const MealPlannerScreen()),
-                ),
+                    icon: Icons.calendar_month_outlined,
+                    label: 'Meal Planner',
+                    onTap: () => _go(context, const MealPlannerScreen())),
                 _DrawerItem(
-                  icon: Icons.shopping_cart_outlined,
-                  label: 'Daftar Belanja',
-                  onTap: () => _go(context, const ShoppingListScreen()),
-                ),
+                    icon: Icons.shopping_cart_outlined,
+                    label: 'Daftar Belanja',
+                    onTap: () => _go(context, const ShoppingListScreen())),
                 _DrawerItem(
-                  icon: Icons.favorite_outline,
-                  label: 'Favorit',
-                  onTap: () =>
-                      _go(context, const FavoritesScreen(), refresh: true),
-                ),
+                    icon: Icons.favorite_outline,
+                    label: 'Favorit',
+                    onTap: () => _go(context, const FavoritesScreen(), refresh: true)),
                 const Divider(indent: 20, endIndent: 20),
                 _DrawerItem(
-                  icon: Icons.settings_outlined,
-                  label: 'Pengaturan',
-                  onTap: () => _go(context, const SettingsScreen()),
-                ),
+                    icon: Icons.settings_outlined,
+                    label: 'Pengaturan',
+                    onTap: () => _go(context, const SettingsScreen())),
               ],
             ),
           ),
           const Divider(height: 1),
           _DrawerItem(
-            icon: Icons.logout,
-            label: 'Keluar',
-            color: Colors.red,
-            onTap: () => _signOut(context),
-          ),
+              icon: Icons.logout,
+              label: 'Keluar',
+              color: Colors.red,
+              onTap: () => _signOut(context)),
           const SizedBox(height: 8),
         ]),
       ),
@@ -1281,8 +1395,7 @@ class _DrawerItem extends StatelessWidget {
               fontSize: 15, fontWeight: FontWeight.w500, color: c)),
       onTap: onTap,
       horizontalTitleGap: 8,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
@@ -1308,79 +1421,57 @@ class _CommunityCarouselCard extends StatelessWidget {
           border: Border.all(color: AppTheme.borderOn(context)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 6,
+                offset: const Offset(0, 2)),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
-              child: recipe.imageUrl.isNotEmpty
-                  ? Image.network(
-                      recipe.imageUrl,
-                      height: 95,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder(context),
-                    )
-                  : _placeholder(context),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    recipe.title,
-                    style: TextStyle(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            child: recipe.imageUrl.isNotEmpty
+                ? Image.network(recipe.imageUrl,
+                    height: 95, width: double.infinity, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _placeholder(context))
+                : _placeholder(context),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(recipe.title,
+                  style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.textOn(context),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    recipe.authorName,
+                      color: AppTheme.textOn(context)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              Text(recipe.authorName,
+                  style: TextStyle(
+                      fontSize: 10, color: AppTheme.textSubOn(context)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              Row(children: [
+                const Icon(Icons.favorite, size: 11, color: Colors.red),
+                const SizedBox(width: 2),
+                Text('${recipe.likes}',
                     style: TextStyle(
-                        fontSize: 10,
-                        color: AppTheme.textSubOn(context)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    const Icon(Icons.favorite, size: 11, color: Colors.red),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${recipe.likes}',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.textSubOn(context)),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.star, size: 11, color: Colors.amber),
-                    const SizedBox(width: 2),
-                    Text(
-                      recipe.averageRating > 0
-                          ? recipe.averageRating.toStringAsFixed(1)
-                          : '-',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.textSubOn(context)),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-          ],
-        ),
+                        fontSize: 10, color: AppTheme.textSubOn(context))),
+                const SizedBox(width: 6),
+                const Icon(Icons.star, size: 11, color: Colors.amber),
+                const SizedBox(width: 2),
+                Text(
+                  recipe.averageRating > 0
+                      ? recipe.averageRating.toStringAsFixed(1)
+                      : '-',
+                  style: TextStyle(
+                      fontSize: 10, color: AppTheme.textSubOn(context)),
+                ),
+              ]),
+            ]),
+          ),
+        ]),
       ),
     );
   }
@@ -1393,7 +1484,7 @@ class _CommunityCarouselCard extends StatelessWidget {
       );
 }
 
-// ── Carousel Card ─────────────────────────────────────────────────────────────
+// ── Local Carousel Card ───────────────────────────────────────────────────────
 
 class _CarouselCard extends StatelessWidget {
   final Recipe recipe;
@@ -1413,67 +1504,51 @@ class _CarouselCard extends StatelessWidget {
           border: Border.all(color: AppTheme.borderOn(context)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 6,
+                offset: const Offset(0, 2)),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
-              child: SizedBox(
-                height: 90,
-                width: double.infinity,
-                child: _buildImage(context),
-              ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            child: SizedBox(
+              height: 90, width: double.infinity,
+              child: _buildImage(context),
             ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    recipe.title,
-                    style: TextStyle(
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(recipe.title,
+                  style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.textOn(context),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    const Icon(Icons.star, size: 11, color: Colors.amber),
-                    const SizedBox(width: 2),
-                    Text(
-                      recipe.userRating > 0
-                          ? recipe.userRating.toStringAsFixed(1)
-                          : recipe.rating.toStringAsFixed(1),
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.textSubOn(context)),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(Icons.timer_outlined,
-                        size: 11, color: AppTheme.textSubOn(context)),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${recipe.cookingTime}m',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.textSubOn(context)),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-          ],
-        ),
+                      color: AppTheme.textOn(context)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 6),
+              Row(children: [
+                const Icon(Icons.star, size: 11, color: Colors.amber),
+                const SizedBox(width: 2),
+                Text(
+                  recipe.userRating > 0
+                      ? recipe.userRating.toStringAsFixed(1)
+                      : recipe.rating.toStringAsFixed(1),
+                  style: TextStyle(
+                      fontSize: 10, color: AppTheme.textSubOn(context)),
+                ),
+                const SizedBox(width: 6),
+                Icon(Icons.timer_outlined,
+                    size: 11, color: AppTheme.textSubOn(context)),
+                const SizedBox(width: 2),
+                Text('${recipe.cookingTime}m',
+                    style: TextStyle(
+                        fontSize: 10, color: AppTheme.textSubOn(context))),
+              ]),
+            ]),
+          ),
+        ]),
       ),
     );
   }
@@ -1486,12 +1561,9 @@ class _CarouselCard extends StatelessWidget {
       }
     }
     if (recipe.imageUrl.isNotEmpty) {
-      return Image.network(
-        recipe.imageUrl,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        errorBuilder: (_, __, ___) => _placeholder(context),
-      );
+      return Image.network(recipe.imageUrl,
+          fit: BoxFit.cover, width: double.infinity,
+          errorBuilder: (_, __, ___) => _placeholder(context));
     }
     return _placeholder(context);
   }
@@ -1503,7 +1575,7 @@ class _CarouselCard extends StatelessWidget {
       );
 }
 
-// ── Sort & Filter Bottom Sheet ────────────────────────────────────────────────
+// ── Sort & Filter Sheet ───────────────────────────────────────────────────────
 
 class _SortFilterSheet extends StatefulWidget {
   final SortOption currentSort;
@@ -1530,10 +1602,9 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
   @override
   void initState() {
     super.initState();
-    _sort = widget.currentSort;
+    _sort       = widget.currentSort;
     _difficulty = Set.from(widget.difficultyFilter);
-    _maxTime =
-        widget.maxTime >= 999 ? 180.0 : widget.maxTime.toDouble();
+    _maxTime    = widget.maxTime >= 999 ? 180.0 : widget.maxTime.toDouble();
   }
 
   @override
@@ -1548,8 +1619,7 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
           margin: const EdgeInsets.only(top: 12, bottom: 8),
           width: 40, height: 4,
           decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2)),
+              color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1565,8 +1635,7 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                   _maxTime = 180;
                 });
               },
-              child: const Text('Reset',
-                  style: TextStyle(color: AppTheme.primary)),
+              child: const Text('Reset', style: TextStyle(color: AppTheme.primary)),
             ),
           ]),
         ),
@@ -1577,19 +1646,17 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
               const Text('Urutkan',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15)),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: [
-                _sortChip('Terbaru', SortOption.newest),
+                _sortChip('Terbaru',  SortOption.newest),
                 _sortChip('Rating ↑', SortOption.ratingDesc),
-                _sortChip('Waktu ↑', SortOption.timeAsc),
+                _sortChip('Waktu ↑',  SortOption.timeAsc),
                 _sortChip('Nama A–Z', SortOption.nameAsc),
               ]),
               const SizedBox(height: 20),
               const Text('Kesulitan',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15)),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -1597,13 +1664,10 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                     .map((d) => FilterChip(
                           label: Text(d),
                           selected: _difficulty.contains(d),
-                          selectedColor:
-                              AppTheme.primary.withValues(alpha: 0.15),
+                          selectedColor: AppTheme.primary.withValues(alpha: 0.15),
                           checkmarkColor: AppTheme.primary,
                           onSelected: (v) => setState(() {
-                            v
-                                ? _difficulty.add(d)
-                                : _difficulty.remove(d);
+                            v ? _difficulty.add(d) : _difficulty.remove(d);
                           }),
                         ))
                     .toList(),
@@ -1611,16 +1675,12 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
               const SizedBox(height: 20),
               Row(children: [
                 const Text('Waktu Maksimal',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                 const Spacer(),
                 Text(
-                  _maxTime >= 180
-                      ? 'Semua'
-                      : '${_maxTime.round()} menit',
+                  _maxTime >= 180 ? 'Semua' : '${_maxTime.round()} menit',
                   style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontWeight: FontWeight.bold),
+                      color: AppTheme.primary, fontWeight: FontWeight.bold),
                 ),
               ]),
               Slider(
@@ -1629,30 +1689,24 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                 activeColor: AppTheme.primary,
                 onChanged: (v) => setState(() => _maxTime = v),
               ),
-              Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('15 mnt',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSubOn(context))),
-                    Text('180 mnt+',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSubOn(context))),
-                  ]),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('15 mnt',
+                    style: TextStyle(
+                        fontSize: 12, color: AppTheme.textSubOn(context))),
+                Text('180 mnt+',
+                    style: TextStyle(
+                        fontSize: 12, color: AppTheme.textSubOn(context))),
+              ]),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () {
-                  widget.onApply(_sort, _difficulty,
-                      _maxTime >= 180 ? 999 : _maxTime.round());
+                  widget.onApply(
+                      _sort, _difficulty, _maxTime >= 180 ? 999 : _maxTime.round());
                   Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('Terapkan Filter',
-                    style: TextStyle(fontSize: 16)),
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: const Text('Terapkan Filter', style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 16),
             ],
