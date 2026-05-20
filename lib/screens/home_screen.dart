@@ -835,13 +835,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showNotificationPanel(BuildContext context) {
+  void _showNotificationPanel(BuildContext outerCtx) {
+    final future = _fs.getActivityNotifications();
     showModalBottomSheet(
-      context: context,
+      context: outerCtx,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         initialChildSize: 0.5,
         maxChildSize: 0.85,
         minChildSize: 0.35,
@@ -859,22 +860,54 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(children: [
               Icon(Icons.notifications, color: AppTheme.primary),
               SizedBox(width: 10),
-              Text('Notifikasi',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('Aktivitas Komunitas',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ]),
           ),
           const Divider(),
           Expanded(
-            child: ListView(controller: ctrl, children: const [
-              _NotifTile(
-                icon: Icons.restaurant_menu,
-                color: AppTheme.primary,
-                title: 'Selamat datang di ResepKu!',
-                body: 'Mulai tambahkan resep favoritmu dan bagikan ke komunitas.',
-                time: 'Baru saja',
-              ),
-            ]),
+            child: FutureBuilder<List<AppNotification>>(
+              future: future,
+              builder: (_, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final items = snapshot.data ?? [];
+                if (items.isEmpty) {
+                  return Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.notifications_none,
+                          size: 56, color: Colors.grey[400]),
+                      const SizedBox(height: 12),
+                      Text('Belum ada aktivitas komunitas',
+                          style: TextStyle(
+                              color: Colors.grey[500], fontSize: 14)),
+                    ]),
+                  );
+                }
+                return ListView.separated(
+                  controller: ctrl,
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, indent: 72, endIndent: 16),
+                  itemBuilder: (_, i) => _RealNotifTile(
+                    notif: items[i],
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      if (items[i].recipe != null) {
+                        Navigator.push(
+                          outerCtx,
+                          MaterialPageRoute(
+                            builder: (_) => CommunityDetailScreen(
+                                recipe: items[i].recipe!),
+                          ),
+                        ).then((_) => _load());
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
           ),
         ]),
       ),
@@ -928,42 +961,65 @@ class _StatCard extends StatelessWidget {
 
 // ── Notification Tile ─────────────────────────────────────────────────────────
 
-class _NotifTile extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String body;
-  final String time;
-  const _NotifTile({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.body,
-    required this.time,
-  });
+String _formatTimeAgo(DateTime? time) {
+  if (time == null) return '';
+  final diff = DateTime.now().difference(time);
+  if (diff.inMinutes < 1) return 'Baru saja';
+  if (diff.inHours < 1) return '${diff.inMinutes} menit lalu';
+  if (diff.inDays < 1) return '${diff.inHours} jam lalu';
+  if (diff.inDays < 7) return '${diff.inDays} hari lalu';
+  return '${time.day}/${time.month}/${time.year}';
+}
+
+class _RealNotifTile extends StatelessWidget {
+  final AppNotification notif;
+  final VoidCallback onTap;
+  const _RealNotifTile({required this.notif, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.12),
-        child: Icon(icon, color: color, size: 22),
+      onTap: onTap,
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: notif.imageUrl.isNotEmpty
+            ? Image.network(
+                notif.imageUrl,
+                width: 48, height: 48, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _placeholder(),
+              )
+            : _placeholder(),
       ),
-      title: Text(title,
-          style: const TextStyle(
-              fontWeight: FontWeight.w600, fontSize: 14)),
+      title: Text(
+        notif.title,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+      ),
       subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const SizedBox(height: 2),
-        Text(body, style: const TextStyle(fontSize: 13)),
+        Text(
+          notif.body,
+          style: const TextStyle(fontSize: 13),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: 4),
-        Text(time,
-            style: TextStyle(
-                fontSize: 11, color: AppTheme.textSubOn(context))),
+        Text(
+          _formatTimeAgo(notif.time),
+          style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context)),
+        ),
       ]),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     );
   }
+
+  Widget _placeholder() => Container(
+    width: 48, height: 48,
+    decoration: BoxDecoration(
+      color: AppTheme.primary.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: const Icon(Icons.restaurant, color: AppTheme.primary, size: 24),
+  );
 }
 
 // ── App Drawer ────────────────────────────────────────────────────────────────

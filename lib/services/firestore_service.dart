@@ -108,6 +108,25 @@ class FirestoreService {
     return snap.docs.map(CommunityRecipe.fromFirestore).toList();
   }
 
+  // Aktivitas komunitas — untuk panel notifikasi
+  Future<List<AppNotification>> getActivityNotifications({int limit = 10}) async {
+    final snap = await _recipes
+        .orderBy('publishedAt', descending: true)
+        .limit(limit)
+        .get();
+    return snap.docs.map((doc) {
+      final recipe = CommunityRecipe.fromFirestore(doc);
+      return AppNotification(
+        id: doc.id,
+        title: '${recipe.authorName} membagikan resep baru',
+        body: recipe.title,
+        time: recipe.publishedAt,
+        imageUrl: recipe.imageUrl,
+        recipe: recipe,
+      );
+    }).toList();
+  }
+
   // Total resep di komunitas — untuk stat card
   Future<int> getCommunityRecipeCount() async {
     final snap = await _recipes.count().get();
@@ -261,6 +280,24 @@ class FirestoreService {
 }
 
 // ─── Data Models ─────────────────────────────────────────────────────────────
+
+class AppNotification {
+  final String id;
+  final String title;
+  final String body;
+  final DateTime? time;
+  final String imageUrl;
+  final CommunityRecipe? recipe;
+
+  const AppNotification({
+    required this.id,
+    required this.title,
+    required this.body,
+    this.time,
+    this.imageUrl = '',
+    this.recipe,
+  });
+}
 
 class PagedResult {
   final List<CommunityRecipe> recipes;
