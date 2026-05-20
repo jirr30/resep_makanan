@@ -6,6 +6,8 @@ import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import 'auth_gate_screen.dart';
+import 'profile_screen.dart';
+import 'user_profile_screen.dart';
 
 String _formatViewCount(int count) {
   if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
@@ -38,6 +40,9 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   int    _ratingCount   = 0;
   int    _viewCount     = 0;
 
+  bool? _isFollowing;    // null = belum dimuat
+  bool  _followLoading = false;
+
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
   bool get _isOwner => _currentUserId != null && _currentUserId == widget.recipe.authorId;
 
@@ -52,6 +57,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     _loadLikeStatus();
     _loadUserRating();
     _countView();
+    _loadFollowStatus();
   }
 
   @override
@@ -66,6 +72,36 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       if (mounted) setState(() => _viewCount++);
     } catch (_) {
       // View count bukan fitur kritis, abaikan jika gagal
+    }
+  }
+
+  Future<void> _loadFollowStatus() async {
+    if (_currentUserId == null || _isOwner) return;
+    try {
+      final following = await _fs.isFollowing(widget.recipe.authorId);
+      if (mounted) setState(() => _isFollowing = following);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_currentUserId == null || _isOwner || _isFollowing == null) return;
+    setState(() => _followLoading = true);
+    final wasFollowing = _isFollowing!;
+    try {
+      if (wasFollowing) {
+        await _fs.unfollowUser(widget.recipe.authorId);
+      } else {
+        await _fs.followUser(widget.recipe.authorId);
+      }
+      if (mounted) setState(() => _isFollowing = !wasFollowing);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal. Coba lagi.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _followLoading = false);
     }
   }
 
@@ -372,50 +408,95 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     );
   }
 
+  void _openAuthorProfile() {
+    final myUid = _currentUserId;
+    if (widget.recipe.authorId == myUid) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
+    } else {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId:       widget.recipe.authorId,
+          initialName:  widget.recipe.authorName,
+          initialPhoto: widget.recipe.authorPhoto,
+        ),
+      ));
+    }
+  }
+
   Widget _buildAuthorInfo() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(children: [
-        CircleAvatar(
-          radius: 20,
-          backgroundImage: widget.recipe.authorPhoto.isNotEmpty
-              ? NetworkImage(widget.recipe.authorPhoto)
-              : null,
-          backgroundColor: AppTheme.primary,
-          child: widget.recipe.authorPhoto.isEmpty
-              ? const Icon(Icons.person, color: Colors.white, size: 20)
-              : null,
+        GestureDetector(
+          onTap: _openAuthorProfile,
+          child: CircleAvatar(
+            radius: 20,
+            backgroundImage: widget.recipe.authorPhoto.isNotEmpty
+                ? NetworkImage(widget.recipe.authorPhoto)
+                : null,
+            backgroundColor: AppTheme.primary,
+            child: widget.recipe.authorPhoto.isEmpty
+                ? const Icon(Icons.person, color: Colors.white, size: 20)
+                : null,
+          ),
         ),
         const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Text(widget.recipe.authorName,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            if (_isOwner) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
-                child: const Text('Kamu',
-                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+        Expanded(child: GestureDetector(
+          onTap: _openAuthorProfile,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text(widget.recipe.authorName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              if (_isOwner) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
+                  child: const Text('Kamu',
+                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ]),
+            if (widget.recipe.publishedAt != null)
+              Text(
+                'Dibagikan ${DateFormat('d MMM yyyy', 'id_ID').format(widget.recipe.publishedAt!)}',
+                style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
               ),
-            ],
+            Row(children: [
+              Icon(Icons.remove_red_eye_outlined,
+                  size: 12, color: AppTheme.textSubOn(context)),
+              const SizedBox(width: 4),
+              Text('${_formatViewCount(_viewCount)} kali dilihat',
+                  style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12)),
+            ]),
           ]),
-          if (widget.recipe.publishedAt != null)
-            Text(
-              'Dibagikan ${DateFormat('d MMM yyyy', 'id_ID').format(widget.recipe.publishedAt!)}',
-              style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
-            ),
-          Row(children: [
-            Icon(Icons.remove_red_eye_outlined,
-                size: 12, color: AppTheme.textSubOn(context)),
-            const SizedBox(width: 4),
-            Text(
-              '${_formatViewCount(_viewCount)} kali dilihat',
-              style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12),
-            ),
-          ]),
-        ])),
+        )),
+        // Follow / Unfollow button
+        if (!_isOwner && _currentUserId != null && _isFollowing != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: _followLoading
+                ? const SizedBox(
+                    width: 24, height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
+                : OutlinedButton(
+                    onPressed: _toggleFollow,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      side: const BorderSide(color: AppTheme.primary),
+                      foregroundColor: AppTheme.primary,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                    ),
+                    child: Text(
+                      _isFollowing! ? 'Mengikuti' : 'Ikuti',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+          ),
       ]),
     );
   }

@@ -8,6 +8,8 @@ class FirestoreService {
   final _db = FirebaseFirestore.instance;
 
   CollectionReference get _recipes => _db.collection('community_recipes');
+  CollectionReference get _users   => _db.collection('users');
+  CollectionReference get _follows => _db.collection('follows');
 
   // ─── Image Upload ────────────────────────────────────────────────────────────
 
@@ -285,11 +287,118 @@ class FirestoreService {
     await _recipes.doc(docId).delete();
   }
 
+  // ─── User Profile Sync ───────────────────────────────────────────────────────
+
+  Future<void> syncCurrentUserProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await _users.doc(user.uid).set({
+        'displayName': user.displayName ?? 'Anonim',
+        'photoURL':    user.photoURL ?? '',
+        'updatedAt':   FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  // ─── Follow ───────────────────────────────────────────────────────────────────
+
+  Future<bool> isFollowing(String targetUid) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid == targetUid) return false;
+    final doc = await _follows.doc('${user.uid}_$targetUid').get();
+    return doc.exists;
+  }
+
+  Future<void> followUser(String targetUid) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid == targetUid) return;
+    final batch = _db.batch();
+    batch.set(_follows.doc('${user.uid}_$targetUid'), {
+      'followerId': user.uid,
+      'followeeId': targetUid,
+      'createdAt':  FieldValue.serverTimestamp(),
+    });
+    batch.set(_users.doc(user.uid),  {'followingCount': FieldValue.increment(1)},  SetOptions(merge: true));
+    batch.set(_users.doc(targetUid), {'followerCount':  FieldValue.increment(1)},  SetOptions(merge: true));
+    await batch.commit();
+  }
+
+  Future<void> unfollowUser(String targetUid) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final batch = _db.batch();
+    batch.delete(_follows.doc('${user.uid}_$targetUid'));
+    batch.set(_users.doc(user.uid),  {'followingCount': FieldValue.increment(-1)}, SetOptions(merge: true));
+    batch.set(_users.doc(targetUid), {'followerCount':  FieldValue.increment(-1)}, SetOptions(merge: true));
+    await batch.commit();
+  }
+
+  Future<PagedResult> getFollowingFeed({DocumentSnapshot? startAfter}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return PagedResult(recipes: [], lastDoc: null, hasMore: false);
+
+    final followSnap = await _follows
+        .where('followerId', isEqualTo: user.uid)
+        .limit(30)
+        .get();
+    if (followSnap.docs.isEmpty) {
+      return PagedResult(recipes: [], lastDoc: null, hasMore: false);
+    }
+
+    final followedUids = followSnap.docs
+        .map((d) => (d.data() as Map<String, dynamic>)['followeeId'] as String)
+        .toList();
+    try {
+      Query q = _recipes
+          .where('authorId', whereIn: followedUids)
+          .orderBy('publishedAt', descending: true)
+          .limit(pageSize);
+      if (startAfter != null) q = q.startAfterDocument(startAfter);
+      final snap    = await q.get();
+      final recipes = snap.docs.map(CommunityRecipe.fromFirestore).toList();
+      return PagedResult(
+        recipes: recipes,
+        lastDoc: snap.docs.isNotEmpty ? snap.docs.last : null,
+        hasMore: snap.docs.length == pageSize,
+      );
+    } catch (_) {
+      // Fallback jika composite index belum aktif
+      Query q = _recipes.where('authorId', whereIn: followedUids).limit(pageSize);
+      if (startAfter != null) q = q.startAfterDocument(startAfter);
+      final snap    = await q.get();
+      final recipes = snap.docs.map(CommunityRecipe.fromFirestore).toList();
+      recipes.sort((a, b) =>
+          (b.publishedAt ?? DateTime(0)).compareTo(a.publishedAt ?? DateTime(0)));
+      return PagedResult(
+        recipes: recipes,
+        lastDoc: snap.docs.isNotEmpty ? snap.docs.last : null,
+        hasMore: snap.docs.length == pageSize,
+      );
+    }
+  }
+
   // ─── Profile Stats ────────────────────────────────────────────────────────────
 
   Future<UserProfileStats> getUserStats(String userId) async {
-    final snap = await _recipes.where('authorId', isEqualTo: userId).get();
-    final recipes = snap.docs.map(CommunityRecipe.fromFirestore).toList();
+    final results = await Future.wait([
+      _recipes.where('authorId', isEqualTo: userId).get(),
+      _users.doc(userId).get(),
+    ]);
+
+    final snap     = results[0] as QuerySnapshot;
+    final userDoc  = results[1] as DocumentSnapshot;
+    final recipes  = snap.docs.map(CommunityRecipe.fromFirestore).toList();
+    recipes.sort((a, b) =>
+        (b.publishedAt ?? DateTime(0)).compareTo(a.publishedAt ?? DateTime(0)));
+
+    final userData    = userDoc.exists ? userDoc.data() as Map<String, dynamic> : <String, dynamic>{};
+    final displayName = (userData['displayName'] as String?)?.isNotEmpty == true
+        ? userData['displayName'] as String
+        : (recipes.isNotEmpty ? recipes.first.authorName : 'Anonim');
+    final photoURL    = (userData['photoURL'] as String?)?.isNotEmpty == true
+        ? userData['photoURL'] as String
+        : (recipes.isNotEmpty ? recipes.first.authorPhoto : '');
 
     final totalLikes   = recipes.fold<int>(0, (s, r) => s + r.likes);
     final totalViews   = recipes.fold<int>(0, (s, r) => s + r.viewCount);
@@ -298,11 +407,15 @@ class FirestoreService {
     final avgRating    = totalRatings > 0 ? weightedSum / totalRatings : 0.0;
 
     return UserProfileStats(
-      recipeCount:   recipes.length,
-      totalLikes:    totalLikes,
-      totalViews:    totalViews,
-      averageRating: avgRating,
-      recipes:       recipes,
+      displayName:    displayName,
+      photoURL:       photoURL,
+      recipeCount:    recipes.length,
+      totalLikes:     totalLikes,
+      totalViews:     totalViews,
+      averageRating:  avgRating,
+      recipes:        recipes,
+      followerCount:  userData['followerCount']  as int? ?? 0,
+      followingCount: userData['followingCount'] as int? ?? 0,
     );
   }
 }
@@ -335,17 +448,40 @@ class PagedResult {
 }
 
 class UserProfileStats {
+  final String               displayName;
+  final String               photoURL;
   final int                  recipeCount;
   final int                  totalLikes;
   final int                  totalViews;
   final double               averageRating;
   final List<CommunityRecipe> recipes;
+  final int                  followerCount;
+  final int                  followingCount;
   const UserProfileStats({
+    this.displayName   = '',
+    this.photoURL      = '',
     required this.recipeCount,
     required this.totalLikes,
     required this.totalViews,
     required this.averageRating,
     required this.recipes,
+    this.followerCount  = 0,
+    this.followingCount = 0,
+  });
+}
+
+class UserPublicProfile {
+  final String uid;
+  final String displayName;
+  final String photoURL;
+  final int    followerCount;
+  final int    followingCount;
+  const UserPublicProfile({
+    required this.uid,
+    required this.displayName,
+    required this.photoURL,
+    this.followerCount  = 0,
+    this.followingCount = 0,
   });
 }
 

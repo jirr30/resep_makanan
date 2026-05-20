@@ -30,6 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (uid == null) return;
     setState(() => _loading = true);
     try {
+      _fs.syncCurrentUserProfile(); // fire-and-forget: update nama/foto di Firestore
       final stats = await _fs.getUserStats(uid);
       if (mounted) setState(() { _stats = stats; _loading = false; });
     } catch (_) {
@@ -185,8 +186,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: TextStyle(fontSize: 12, color: AppTheme.primary)),
           ]),
         ),
+        if (_stats != null) ...[
+          const SizedBox(height: 16),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            _FollowStat(label: 'Followers', value: _stats!.followerCount),
+            Container(width: 1, height: 32, color: AppTheme.borderOn(context)),
+            _FollowStat(label: 'Mengikuti', value: _stats!.followingCount),
+          ]),
+        ],
         if (user.metadata.creationTime != null) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             'Bergabung ${DateFormat('MMMM yyyy', 'id_ID').format(user.metadata.creationTime!)}',
             style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context)),
@@ -234,6 +243,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ]),
       ]),
     );
+  }
+}
+
+class _FollowStat extends StatelessWidget {
+  final String label;
+  final int    value;
+  const _FollowStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(children: [
+        Text(_fmt(value),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
+      ]),
+    );
+  }
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}jt';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}rb';
+    return '$n';
   }
 }
 

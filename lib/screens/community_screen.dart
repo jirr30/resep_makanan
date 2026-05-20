@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import 'add_recipe_screen.dart';
 import 'auth_gate_screen.dart';
 import 'community_detail_screen.dart';
 import 'profile_screen.dart';
+import 'user_profile_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -24,7 +26,7 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -77,6 +79,7 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
           controller: _tabController,
           tabs: const [
             Tab(text: 'Semua Resep'),
+            Tab(text: 'Mengikuti'),
             Tab(text: 'Resep Saya'),
           ],
         ),
@@ -85,6 +88,17 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
         controller: _tabController,
         children: [
           _AllRecipesTab(fs: _fs),
+          auth.isLoggedIn
+              ? _FollowingFeedTab(fs: _fs)
+              : _LoginPrompt(onLogin: () => Navigator.of(context).pushAndRemoveUntil(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const AuthGateScreen(),
+                    transitionsBuilder: (_, anim, __, child) =>
+                        FadeTransition(opacity: anim, child: child),
+                    transitionDuration: const Duration(milliseconds: 350),
+                  ),
+                  (_) => false,
+                )),
           auth.isLoggedIn
               ? _MyRecipesTab(fs: _fs)
               : _LoginPrompt(onLogin: () => Navigator.of(context).pushAndRemoveUntil(
@@ -487,6 +501,121 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
   }
 }
 
+// ─── Following Feed Tab ───────────────────────────────────────────────────────
+
+class _FollowingFeedTab extends StatefulWidget {
+  final FirestoreService fs;
+  const _FollowingFeedTab({required this.fs});
+
+  @override
+  State<_FollowingFeedTab> createState() => _FollowingFeedTabState();
+}
+
+class _FollowingFeedTabState extends State<_FollowingFeedTab> {
+  final _scrollCtrl = ScrollController();
+  List<CommunityRecipe> _recipes     = [];
+  bool    _loading     = true;
+  bool    _loadingMore = false;
+  bool    _hasMore     = true;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; _recipes = []; _hasMore = true; });
+    try {
+      final result = await widget.fs.getFollowingFeed();
+      if (mounted) {
+        setState(() { _recipes = result.recipes; _hasMore = result.hasMore; _loading = false; });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _error = e; _loading = false; });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _recipes.isEmpty) return;
+    setState(() => _loadingMore = true);
+    try {
+      final lastDoc = await widget.fs.getLastDocSnapshot(_recipes.last.id);
+      final result  = await widget.fs.getFollowingFeed(startAfter: lastDoc);
+      if (mounted) {
+        setState(() {
+          _recipes.addAll(result.recipes);
+          _hasMore     = result.hasMore;
+          _loadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+    if (_error != null) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.wifi_off, size: 48, color: AppTheme.textSubOn(context)),
+        const SizedBox(height: 12),
+        Text('Gagal memuat', style: TextStyle(color: AppTheme.textSubOn(context))),
+        const SizedBox(height: 12),
+        ElevatedButton(onPressed: _load, child: const Text('Coba Lagi')),
+      ]));
+    }
+    if (_recipes.isEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.people_outline, size: 64, color: AppTheme.textSubOn(context)),
+          const SizedBox(height: 16),
+          Text('Belum ada resep dari chef yang kamu ikuti',
+              style: TextStyle(fontSize: 15, color: AppTheme.textSubOn(context)),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text('Ikuti chef lain untuk melihat resep mereka di sini',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSubOn(context)),
+              textAlign: TextAlign.center),
+        ]),
+      ));
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        controller: _scrollCtrl,
+        padding: const EdgeInsets.only(bottom: 80),
+        itemCount: _recipes.length + (_loadingMore ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i == _recipes.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+            );
+          }
+          return _CommunityCard(recipe: _recipes[i], fs: widget.fs);
+        },
+      ),
+    );
+  }
+}
+
 String _fmtView(int count) {
   if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
   if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
@@ -532,24 +661,30 @@ class _CommunityCard extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundImage: recipe.authorPhoto.isNotEmpty
-                      ? NetworkImage(recipe.authorPhoto)
-                      : null,
-                  backgroundColor: AppTheme.primary,
-                  child: recipe.authorPhoto.isEmpty
-                      ? const Icon(Icons.person, size: 14, color: Colors.white)
-                      : null,
+                GestureDetector(
+                  onTap: () => _openAuthorProfile(context),
+                  child: Row(children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundImage: recipe.authorPhoto.isNotEmpty
+                          ? NetworkImage(recipe.authorPhoto)
+                          : null,
+                      backgroundColor: AppTheme.primary,
+                      child: recipe.authorPhoto.isEmpty
+                          ? const Icon(Icons.person, size: 14, color: Colors.white)
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(recipe.authorName,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      if (recipe.publishedAt != null)
+                        Text(DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
+                            style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
+                    ]),
+                  ]),
                 ),
-                const SizedBox(width: 8),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(recipe.authorName,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  if (recipe.publishedAt != null)
-                    Text(DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
-                        style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
-                ])),
+                const Spacer(),
                 if (showDelete)
                   IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
@@ -593,6 +728,22 @@ class _CommunityCard extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  void _openAuthorProfile(BuildContext context) {
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (recipe.authorId == myUid) {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const ProfileScreen()));
+    } else {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId:       recipe.authorId,
+          initialName:  recipe.authorName,
+          initialPhoto: recipe.authorPhoto,
+        ),
+      ));
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context) async {
