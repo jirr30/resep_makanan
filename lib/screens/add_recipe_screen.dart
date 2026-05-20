@@ -79,7 +79,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
       title:       _titleCtrl.text.trim(),
       category:    _category,
       description: _descCtrl.text.trim(),
-      imageUrl:    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+      imageUrl:    '',
       imagePath:   _localImagePath,
       ingredients: ingredients,
       steps:       _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
