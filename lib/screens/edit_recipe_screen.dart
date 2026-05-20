@@ -112,12 +112,21 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
       fat:        nutrition?.fat      ?? widget.recipe.fat,
     );
 
-    await _db.updateRecipe(updated);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Resep berhasil diperbarui!'), backgroundColor: AppTheme.primary),
-      );
-      Navigator.pop(context, updated);
+    try {
+      await _db.updateRecipe(updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Resep berhasil diperbarui!'), backgroundColor: AppTheme.primary),
+        );
+        Navigator.pop(context, updated);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() { _saving = false; _savingMessage = ''; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal menyimpan perubahan. Coba lagi.'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 

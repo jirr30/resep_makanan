@@ -19,12 +19,14 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
   int _remaining = 0;
   bool _timerRunning = false;
   Timer? _timer;
+  late PageController _pageCtrl;
   final _notif = NotificationService();
 
   @override
   void initState() {
     super.initState();
     _remaining = widget.recipe.cookingTime * 60;
+    _pageCtrl = PageController();
     WakelockPlus.enable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
   }
@@ -32,6 +34,7 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _pageCtrl.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -166,7 +169,7 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                 child: PageView.builder(
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: steps.length,
-                  controller: PageController(initialPage: _step),
+                  controller: _pageCtrl,
                   itemBuilder: (_, i) => Padding(
                     padding: const EdgeInsets.all(32),
                     child: Column(
@@ -220,7 +223,11 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 child: Row(children: [
                   Expanded(child: OutlinedButton.icon(
-                    onPressed: isFirst ? null : () => setState(() => _step--),
+                    onPressed: isFirst ? null : () {
+                      setState(() => _step--);
+                      _pageCtrl.animateToPage(_step,
+                          duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                    },
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Sebelumnya'),
                     style: OutlinedButton.styleFrom(
@@ -231,7 +238,13 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                   )),
                   const SizedBox(width: 16),
                   Expanded(child: ElevatedButton.icon(
-                    onPressed: isLast ? () => Navigator.of(context).pop() : () => setState(() => _step++),
+                    onPressed: isLast
+                        ? () => Navigator.of(context).pop()
+                        : () {
+                            setState(() => _step++);
+                            _pageCtrl.animateToPage(_step,
+                                duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                          },
                     icon: Icon(isLast ? Icons.check_circle : Icons.arrow_forward),
                     label: Text(isLast ? 'Selesai!' : 'Selanjutnya'),
                     style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),

@@ -47,8 +47,8 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
     if (mounted) setState(() { _plans = grouped; _allRecipes = recipes; _loading = false; });
   }
 
-  void _previousWeek() { setState(() => _weekStart = _weekStart.subtract(const Duration(days: 7))); _load(); }
-  void _nextWeek()     { setState(() => _weekStart = _weekStart.add(const Duration(days: 7))); _load(); }
+  void _previousWeek() { _weekStart = _weekStart.subtract(const Duration(days: 7)); _load(); }
+  void _nextWeek()     { _weekStart = _weekStart.add(const Duration(days: 7)); _load(); }
 
   Future<void> _addMeal(String date, String mealType) async {
     if (_allRecipes.isEmpty) {
@@ -103,7 +103,7 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
         title: const Text('Meal Planner'),
         actions: [
           IconButton(icon: const Icon(Icons.today), tooltip: 'Minggu ini',
-            onPressed: () { setState(() => _weekStart = _getMonday(DateTime.now())); _load(); }),
+            onPressed: () { _weekStart = _getMonday(DateTime.now()); _load(); }),
         ],
       ),
       body: Column(

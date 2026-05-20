@@ -30,9 +30,17 @@ class BackupService {
     if (result == null || result.files.isEmpty) return -1;
     final path = result.files.single.path;
     if (path == null) return -1;
+
     final content = await File(path).readAsString();
-    final decoded = jsonDecode(content) as Map<String, dynamic>;
-    final recipes = (decoded['recipes'] as List).cast<Map<String, dynamic>>();
+    final dynamic decoded = jsonDecode(content);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Format backup tidak valid');
+    }
+    final dynamic rawList = decoded['recipes'];
+    if (rawList is! List) {
+      throw const FormatException('Format backup tidak valid: recipes tidak ditemukan');
+    }
+    final recipes = rawList.whereType<Map<String, dynamic>>().toList();
     await _db.importRecipes(recipes);
     return recipes.length;
   }

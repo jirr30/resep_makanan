@@ -178,8 +178,9 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       onDismissed: (_) async {
-        await _db.deleteShoppingItem(item['id'] as int);
-        _load();
+        final id = item['id'] as int;
+        setState(() => _items.removeWhere((i) => i['id'] == id));
+        await _db.deleteShoppingItem(id);
       },
       child: ListTile(
         leading: Checkbox(
@@ -187,8 +188,14 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
           activeColor: AppTheme.primary,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
           onChanged: (v) async {
-            await _db.toggleShoppingItem(item['id'] as int, v ?? false);
-            _load();
+            final id = item['id'] as int;
+            final checked = v ?? false;
+            setState(() {
+              _items = _items.map((i) => i['id'] == id
+                  ? {...i, 'isChecked': checked ? 1 : 0}
+                  : i).toList();
+            });
+            await _db.toggleShoppingItem(id, checked);
           },
         ),
         title: Text(
@@ -198,7 +205,11 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
         subtitle: item['quantity'] != null ? Text(item['quantity'] as String, style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)) : null,
         trailing: IconButton(
           icon: Icon(Icons.delete_outline, size: 20, color: AppTheme.textSubOn(context)),
-          onPressed: () async { await _db.deleteShoppingItem(item['id'] as int); _load(); },
+          onPressed: () async {
+            final id = item['id'] as int;
+            setState(() => _items.removeWhere((i) => i['id'] == id));
+            await _db.deleteShoppingItem(id);
+          },
         ),
       ),
     );
