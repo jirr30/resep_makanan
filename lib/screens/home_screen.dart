@@ -83,8 +83,12 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
       // Tunggu hasil Firestore (sudah jalan paralel)
       final trending = await trendingFuture;
-      final latest   = await latestFuture;
+      final latestRaw = await latestFuture;
       final count    = await countFuture;
+
+      // Buang resep yang sudah tampil di trending agar tidak duplikat
+      final trendingIds = trending.map((r) => r.id).toSet();
+      final latest = latestRaw.where((r) => !trendingIds.contains(r.id)).toList();
 
       if (mounted) {
         setState(() {
