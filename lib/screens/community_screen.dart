@@ -151,12 +151,20 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
   Future<void> _loadInitial() async {
     setState(() { _loading = true; _error = null; _recipes = []; _hasMore = true; });
     try {
-      final result = await widget.fs.getRecipesPaged(
-        category: _selectedCat == 'Semua' ? null : _selectedCat,
-      );
+      final cat    = _selectedCat == 'Semua' ? null : _selectedCat;
+      PagedResult result;
+      try {
+        result = await widget.fs.getRecipesPaged(category: cat);
+      } catch (_) {
+        // Fallback jika composite index belum aktif di Firestore:
+        // load semua tanpa filter kategori, filter client-side.
+        result = await widget.fs.getRecipesPaged();
+      }
       if (mounted) {
         setState(() {
-          _recipes = result.recipes;
+          _recipes = cat == null
+              ? result.recipes
+              : result.recipes.where((r) => r.category == cat).toList();
           _hasMore = result.hasMore;
           _loading = false;
         });
