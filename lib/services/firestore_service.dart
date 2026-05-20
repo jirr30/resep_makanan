@@ -254,11 +254,23 @@ class FirestoreService {
   Future<List<CommunityRecipe>> getMyRecipes() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return [];
-    final snap = await _recipes
-        .where('authorId', isEqualTo: user.uid)
-        .orderBy('publishedAt', descending: true)
-        .get();
-    return snap.docs.map(CommunityRecipe.fromFirestore).toList();
+    try {
+      // Butuh composite index: authorId ASC + publishedAt DESC
+      final snap = await _recipes
+          .where('authorId', isEqualTo: user.uid)
+          .orderBy('publishedAt', descending: true)
+          .get();
+      return snap.docs.map(CommunityRecipe.fromFirestore).toList();
+    } catch (_) {
+      // Fallback: filter tanpa composite index, sort client-side
+      final snap = await _recipes
+          .where('authorId', isEqualTo: user.uid)
+          .get();
+      final list = snap.docs.map(CommunityRecipe.fromFirestore).toList();
+      list.sort((a, b) =>
+          (b.publishedAt ?? DateTime(0)).compareTo(a.publishedAt ?? DateTime(0)));
+      return list;
+    }
   }
 
   Future<void> deleteRecipe(String docId) async {

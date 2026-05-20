@@ -389,8 +389,12 @@ class _MyRecipesTabState extends State<_MyRecipesTab> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final r = await widget.fs.getMyRecipes();
-    if (mounted) setState(() { _recipes = r; _loading = false; });
+    try {
+      final r = await widget.fs.getMyRecipes();
+      if (mounted) setState(() { _recipes = r; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
