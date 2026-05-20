@@ -43,6 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _difficultyFilter = {};
   int _maxTime = 999;
   bool _loading = true;
+  bool _loadingCommunity = true;
+  bool _firestoreLoaded = false;
   bool _hasError = false;
   int _favCount = 0;
   List<Recipe> _allRecipes = [];
@@ -59,54 +61,71 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() { _loading = true; _hasError = false; });
-    try {
-      // Mulai fetch Firestore & SQLite secara paralel
-      final trendingFuture = _fs.getTrendingRecipes()
-          .catchError((_) => <CommunityRecipe>[]);
-      final latestFuture = _fs.getLatestCommunityRecipes()
-          .catchError((_) => <CommunityRecipe>[]);
-      final countFuture = _fs.getCommunityRecipeCount()
-          .catchError((_) => 0);
+  // Full refresh — Firestore hanya di-fetch jika belum pernah load atau dipaksa.
+  Future<void> _load({bool forceFirestore = false}) async {
+    if (forceFirestore || !_firestoreLoaded) {
+      await Future.wait([_loadLocal(), _loadCommunity()]);
+    } else {
+      await _loadLocal();
+    }
+  }
 
-      final cats = await _db.getCustomCategories();
-      final all  = await _db.getAllRecipes();
+  // Hanya SQLite — dipakai saat ganti kategori, toggle favorit, tambah/hapus resep.
+  Future<void> _loadLocal() async {
+    if (mounted) setState(() { _loading = true; _hasError = false; });
+    try {
+      final cats    = await _db.getCustomCategories();
+      final all     = await _db.getAllRecipes();
       final recipes = _selectedCategory == 'Semua'
           ? all
           : await _db.getByCategory(_selectedCategory);
-
       final favorites = all.where((r) => r.isFavorite).toList();
       final recent    = (List<Recipe>.from(all)
             ..sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0)))
           .take(5)
           .toList();
-      // Tunggu hasil Firestore (sudah jalan paralel)
-      final trending = await trendingFuture;
-      final latestRaw = await latestFuture;
-      final count    = await countFuture;
-
-      // Buang resep yang sudah tampil di trending agar tidak duplikat
-      final trendingIds = trending.map((r) => r.id).toSet();
-      final latest = latestRaw.where((r) => !trendingIds.contains(r.id)).toList();
-
       if (mounted) {
         setState(() {
-          _customCategories  = cats;
-          _allRecipes        = all;
-          _all               = recipes;
-          _favCount          = favorites.length;
-          _recentRecipes     = recent;
-          _favoriteRecipes   = favorites;
-          _trendingCommunity = trending;
-          _latestCommunity   = latest;
-          _communityCount    = count;
+          _customCategories = cats;
+          _allRecipes       = all;
+          _all              = recipes;
+          _favCount         = favorites.length;
+          _recentRecipes    = recent;
+          _favoriteRecipes  = favorites;
           _applyFilters();
           _loading = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() { _loading = false; _hasError = true; });
+    }
+  }
+
+  // Hanya Firestore — dipakai saat kembali dari CommunityScreen atau pull-to-refresh.
+  Future<void> _loadCommunity() async {
+    if (mounted) setState(() => _loadingCommunity = true);
+    try {
+      final trending  = await _fs.getTrendingRecipes()
+          .catchError((_) => <CommunityRecipe>[]);
+      final latestRaw = await _fs.getLatestCommunityRecipes()
+          .catchError((_) => <CommunityRecipe>[]);
+      final count     = await _fs.getCommunityRecipeCount()
+          .catchError((_) => 0);
+      final trendingIds = trending.map((r) => r.id).toSet();
+      final latest      = latestRaw
+          .where((r) => !trendingIds.contains(r.id))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _trendingCommunity = trending;
+          _latestCommunity   = latest;
+          _communityCount    = count;
+          _loadingCommunity  = false;
+          _firestoreLoaded   = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() { _loadingCommunity = false; _firestoreLoaded = true; });
     }
   }
 
@@ -129,19 +148,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _toggleFavorite(Recipe recipe) async {
     await _db.toggleFavorite(recipe.id!, !recipe.isFavorite);
-    _load();
+    _loadLocal();
   }
 
   Future<void> _deleteWithUndo(Recipe recipe) async {
     await _db.deleteRecipe(recipe.id!);
-    _load();
+    _loadLocal();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('"${recipe.title}" dihapus'),
       action: SnackBarAction(
         label: 'Batalkan',
         textColor: Colors.amber,
-        onPressed: () async { await _db.insertRecipe(recipe); _load(); },
+        onPressed: () async { await _db.insertRecipe(recipe); _loadLocal(); },
       ),
       duration: const Duration(seconds: 5),
     ));
@@ -189,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     ctrl.dispose();
-    _load();
+    _loadLocal();
   }
 
   List<String> get _allCategories =>
@@ -203,7 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _bottomNavIndex = 0);
       return;
     }
-    // Push as new screen, stay "on" beranda in bottom nav
+    setState(() => _bottomNavIndex = index);
     Widget screen;
     switch (index) {
       case 1: screen = const CommunityScreen();  break;
@@ -212,7 +231,15 @@ class _HomeScreenState extends State<HomeScreen> {
       default: return;
     }
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
-        .then((_) => _load());
+        .then((_) {
+          setState(() => _bottomNavIndex = 0);
+          // Komunitas bisa ubah data Firestore, screen lain cukup local
+          if (index == 1) {
+            _load(forceFirestore: true);
+          } else {
+            _loadLocal();
+          }
+        });
   }
 
   @override
@@ -228,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Cari resep',
             onPressed: () => Navigator.push(
               context, MaterialPageRoute(builder: (_) => const SearchScreen()),
-            ).then((_) => _load()),
+            ).then((_) => _loadLocal()),
           ),
           Stack(children: [
             IconButton(
@@ -254,38 +281,52 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceFirestore: true),
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(child: _buildGreetingHeader()),
             SliverToBoxAdapter(child: _buildSearchBar()),
             SliverToBoxAdapter(child: _buildQuickStats()),
-            if (!_loading && _trendingCommunity.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildCommunityCarousel(
-                  title: 'Populer di Komunitas',
-                  icon: Icons.local_fire_department,
-                  iconColor: Colors.orange,
-                  recipes: _trendingCommunity,
-                  onViewAll: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CommunityScreen()),
-                  ).then((_) => _load()),
+            // Community carousels — shimmer saat loading, konten saat siap
+            if (_loadingCommunity) ...[
+              SliverToBoxAdapter(child: _buildCarouselShimmer(
+                'Populer di Komunitas',
+                Icons.local_fire_department,
+                Colors.orange,
+              )),
+              SliverToBoxAdapter(child: _buildCarouselShimmer(
+                'Terbaru dari Komunitas',
+                Icons.public,
+                Colors.teal,
+              )),
+            ] else ...[
+              if (_trendingCommunity.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildCommunityCarousel(
+                    title: 'Populer di Komunitas',
+                    icon: Icons.local_fire_department,
+                    iconColor: Colors.orange,
+                    recipes: _trendingCommunity,
+                    onViewAll: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CommunityScreen()),
+                    ).then((_) => _load(forceFirestore: true)),
+                  ),
                 ),
-              ),
-            if (!_loading && _latestCommunity.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildCommunityCarousel(
-                  title: 'Terbaru dari Komunitas',
-                  icon: Icons.public,
-                  iconColor: Colors.teal,
-                  recipes: _latestCommunity,
-                  onViewAll: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CommunityScreen()),
-                  ).then((_) => _load()),
+              if (_latestCommunity.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildCommunityCarousel(
+                    title: 'Terbaru dari Komunitas',
+                    icon: Icons.public,
+                    iconColor: Colors.teal,
+                    recipes: _latestCommunity,
+                    onViewAll: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CommunityScreen()),
+                    ).then((_) => _load(forceFirestore: true)),
+                  ),
                 ),
-              ),
+            ],
             if (!_loading && _recentRecipes.isNotEmpty)
               SliverToBoxAdapter(
                 child: _buildCarousel(
@@ -304,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onViewAll: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const FavoritesScreen()),
-                  ).then((_) => _load()),
+                  ).then((_) => _loadLocal()),
                 ),
               ),
             SliverToBoxAdapter(child: _buildCategories()),
@@ -312,7 +353,10 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(child: _buildSectionHeader()),
             if (_hasError)
               SliverFillRemaining(
-                child: ErrorView(message: 'Gagal memuat resep.\nCoba lagi.', onRetry: _load),
+                child: ErrorView(
+                  message: 'Gagal memuat resep.\nCoba lagi.',
+                  onRetry: () => _load(forceFirestore: true),
+                ),
               )
             else if (_loading)
               SliverList(
@@ -335,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       : () => Navigator.push(
                             context,
                             MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
-                          ).then((_) => _load()),
+                          ).then((_) => _loadLocal()),
                 ),
               )
             else
@@ -376,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => DetailScreen(recipe: _filtered[i])),
-                      ).then((_) => _load()),
+                      ).then((_) => _loadLocal()),
                       onFavorite: () => _toggleFavorite(_filtered[i]),
                     ),
                   ),
@@ -391,7 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
-        ).then((_) => _load()),
+        ).then((_) => _loadLocal()),
         backgroundColor: AppTheme.primary,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Tambah Resep',
@@ -537,13 +581,21 @@ class _HomeScreenState extends State<HomeScreen> {
           value: _loading ? '-' : '$_favCount',
           label: 'Favorit',
           color: Colors.red,
+          onTap: _favCount > 0
+              ? () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const FavoritesScreen()))
+                  .then((_) => _loadLocal())
+              : null,
         ),
         const SizedBox(width: 12),
         _StatCard(
           icon: Icons.public,
-          value: _loading ? '-' : '$_communityCount',
+          value: _loadingCommunity ? '-' : '$_communityCount',
           label: 'Komunitas',
           color: Colors.teal,
+          onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const CommunityScreen()))
+              .then((_) => _load(forceFirestore: true)),
         ),
       ]),
     );
@@ -585,7 +637,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final selected = cat == _selectedCategory;
             final isCustom = !AppConstants.categories.contains(cat);
             return GestureDetector(
-              onTap: () { setState(() => _selectedCategory = cat); _load(); },
+              onTap: () { setState(() => _selectedCategory = cat); _loadLocal(); },
               onLongPress: isCustom
                   ? () async {
                       final confirm = await showDialog<bool>(
@@ -612,7 +664,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (_selectedCategory == cat) {
                           setState(() => _selectedCategory = 'Semua');
                         }
-                        _load();
+                        _loadLocal();
                       }
                     }
                   : null,
@@ -685,6 +737,38 @@ class _HomeScreenState extends State<HomeScreen> {
       side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
       padding: EdgeInsets.zero,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  // ── Carousel Shimmer Placeholder ─────────────────────────────────────────
+
+  Widget _buildCarouselShimmer(String title, IconData icon, Color iconColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Icon(icon, size: 18, color: iconColor),
+            const SizedBox(width: 6),
+            Text(title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textOn(context),
+                )),
+          ]),
+        ),
+        SizedBox(
+          height: 190,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: 4,
+            itemBuilder: (_, __) => const ShimmerCarouselCard(),
+          ),
+        ),
+      ],
     );
   }
 
@@ -901,7 +985,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             builder: (_) => CommunityDetailScreen(
                                 recipe: items[i].recipe!),
                           ),
-                        ).then((_) => _load());
+                        ).then((_) => _load(forceFirestore: true));
                       }
                     },
                   ),
@@ -922,38 +1006,47 @@ class _StatCard extends StatelessWidget {
   final String value;
   final String label;
   final Color color;
+  final VoidCallback? onTap;
 
   const _StatCard({
     required this.icon,
     required this.value,
     required this.label,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Column(children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 6),
+            Text(value,
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color)),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11, color: AppTheme.textSubOn(context)),
+                textAlign: TextAlign.center),
+            if (onTap != null) ...[
+              const SizedBox(height: 2),
+              Icon(Icons.arrow_forward_ios, size: 9, color: color.withValues(alpha: 0.6)),
+            ],
+          ]),
         ),
-        child: Column(children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 6),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: color)),
-          const SizedBox(height: 2),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11, color: AppTheme.textSubOn(context)),
-              textAlign: TextAlign.center),
-        ]),
       ),
     );
   }

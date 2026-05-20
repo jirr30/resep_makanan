@@ -69,3 +69,52 @@ class ShimmerList extends StatelessWidget {
     );
   }
 }
+
+class ShimmerCarouselCard extends StatelessWidget {
+  const ShimmerCarouselCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark      = Theme.of(context).brightness == Brightness.dark;
+    final base        = isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade300;
+    final highlight   = isDark ? const Color(0xFF3A3A3A) : Colors.grey.shade100;
+
+    return Shimmer.fromColors(
+      baseColor: base,
+      highlightColor: highlight,
+      child: Container(
+        width: 150,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 95,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(height: 12, width: double.infinity, color: Colors.white),
+                  const SizedBox(height: 6),
+                  Container(height: 10, width: 90, color: Colors.white),
+                  const SizedBox(height: 6),
+                  Container(height: 10, width: 60, color: Colors.white),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
