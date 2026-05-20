@@ -613,6 +613,12 @@ class _HomeScreenState extends State<HomeScreen> {
           value: _loading ? '-' : '${_allRecipes.length}',
           label: 'Resep Saya',
           color: AppTheme.primary,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => _AllMyRecipesScreen(recipes: _allRecipes),
+            ),
+          ).then((_) => _loadLocal()),
         ),
         const SizedBox(width: 12),
         _StatCard(
@@ -620,11 +626,9 @@ class _HomeScreenState extends State<HomeScreen> {
           value: _loading ? '-' : '$_favCount',
           label: 'Favorit',
           color: Colors.red,
-          onTap: _favCount > 0
-              ? () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const FavoritesScreen()))
-                  .then((_) => _loadLocal())
-              : null,
+          onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const FavoritesScreen()))
+              .then((_) => _loadLocal()),
         ),
         const SizedBox(width: 12),
         _StatCard(
@@ -1380,6 +1384,197 @@ class _AppDrawer extends StatelessWidget {
     );
   }
 }
+
+// ── All My Recipes Screen ─────────────────────────────────────────────────────
+
+class _AllMyRecipesScreen extends StatefulWidget {
+  final List<Recipe> recipes;
+  const _AllMyRecipesScreen({required this.recipes});
+
+  @override
+  State<_AllMyRecipesScreen> createState() => _AllMyRecipesScreenState();
+}
+
+class _AllMyRecipesScreenState extends State<_AllMyRecipesScreen> {
+  late List<Recipe> _filtered;
+  String _query = '';
+  final _ctrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.recipes;
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearch(String q) {
+    final query = q.trim().toLowerCase();
+    setState(() {
+      _query    = query;
+      _filtered = query.isEmpty
+          ? widget.recipes
+          : widget.recipes
+              .where((r) =>
+                  r.title.toLowerCase().contains(query) ||
+                  r.category.toLowerCase().contains(query))
+              .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Resep Saya (${widget.recipes.length})'),
+      ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: SearchBar(
+            controller: _ctrl,
+            hintText: 'Cari resep...',
+            leading: Icon(Icons.search, color: AppTheme.textSubOn(context)),
+            trailing: [
+              if (_query.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () { _ctrl.clear(); _onSearch(''); },
+                ),
+            ],
+            onChanged: _onSearch,
+            elevation: const WidgetStatePropertyAll(0),
+            backgroundColor: WidgetStatePropertyAll(AppTheme.surfaceOn(context)),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: AppTheme.borderOn(context)),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _filtered.isEmpty
+              ? Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.search_off, size: 56,
+                        color: AppTheme.textSubOn(context)),
+                    const SizedBox(height: 12),
+                    Text(
+                      _query.isEmpty
+                          ? 'Belum ada resep tersimpan'
+                          : 'Tidak ada resep untuk "$_query"',
+                      style: TextStyle(color: AppTheme.textSubOn(context)),
+                      textAlign: TextAlign.center,
+                    ),
+                  ]),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: _filtered.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final r = _filtered[i];
+                    return Card(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => DetailScreen(recipe: r)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: r.imagePath != null && r.imagePath!.isNotEmpty
+                                  ? Image.file(
+                                      File(r.imagePath!),
+                                      width: 68, height: 68, fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _placeholder(),
+                                    )
+                                  : r.imageUrl.isNotEmpty
+                                      ? Image.network(
+                                          r.imageUrl,
+                                          width: 68, height: 68, fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              _placeholder(),
+                                        )
+                                      : _placeholder(),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                Text(r.title,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 4),
+                                Row(children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(r.category,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primary)),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.timer_outlined,
+                                      size: 13,
+                                      color: AppTheme.textSubOn(context)),
+                                  const SizedBox(width: 3),
+                                  Text('${r.cookingTime} mnt',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.textSubOn(context))),
+                                  if (r.isFavorite) ...[
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.favorite,
+                                        size: 13, color: Colors.red),
+                                  ],
+                                ]),
+                              ]),
+                            ),
+                            Icon(Icons.chevron_right,
+                                color: AppTheme.textSubOn(context)),
+                          ]),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _placeholder() => Container(
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(Icons.restaurant, color: AppTheme.primary),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _DrawerItem extends StatelessWidget {
   final IconData icon;
