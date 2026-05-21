@@ -81,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (await review.isAvailable()) {
       await review.requestReview();
     } else {
-      await review.openStoreListing(appStoreId: 'com.resepku.resep_makanan');
+      await review.openStoreListing(appStoreId: 'com.resepin.resep_makanan');
     }
   }
 

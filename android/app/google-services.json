@@ -8,6 +8,51 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:675950922875:android:6c85003f2f91294ffa66de",
+        "android_client_info": {
+          "package_name": "com.resepin.resep_makanan"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "675950922875-onnf5t7e0ea6qs5gpsqkn472fg9fjth3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.resepin.resep_makanan",
+            "certificate_hash": "4319dfe73240e877bbd2fddac8e5c96e64682acb"
+          }
+        },
+        {
+          "client_id": "675950922875-u35ao7mc7098sj5jcgq4bncnjcs8vb4p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.resepin.resep_makanan",
+            "certificate_hash": "21793d3746a91c9751a42e28ebe5323e8832000b"
+          }
+        },
+        {
+          "client_id": "675950922875-1u7m6qdr66bfmkhc8l18n3ni0af4hsq7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC13bQo6aIeJjWcP3gz-smZ6-IXppjHm_k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "675950922875-1u7m6qdr66bfmkhc8l18n3ni0af4hsq7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:675950922875:android:e900e4e784c96afbfa66de",
         "android_client_info": {
           "package_name": "com.resepku.resep_makanan"

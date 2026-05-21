@@ -1,4 +1,4 @@
-package com.resepku.resep_makanan
+package com.resepin.resep_makanan
 
 import io.flutter.embedding.android.FlutterActivity
 
