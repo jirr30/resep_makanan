@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "675950922875-a6fnasvh7rk1o38cdnef9pauh92i6mbs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.resepin.resep_makanan",
+            "certificate_hash": "5658641d284448930cc7510c6bb13f74c7632459"
+          }
+        },
+        {
           "client_id": "675950922875-onnf5t7e0ea6qs5gpsqkn472fg9fjth3.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
