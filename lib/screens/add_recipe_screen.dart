@@ -105,12 +105,12 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
             await _db.updateRecipe(recipe);
             sharedToCommunity = true;
           }
-        } catch (_) {
+        } catch (e) {
           // Simpan berhasil, tapi share gagal — beri tahu user
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Resep disimpan, tapi gagal dibagikan ke komunitas. Coba lagi dari detail resep.'),
-              duration: Duration(seconds: 4),
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Gagal dibagikan: $e'),
+              duration: const Duration(seconds: 6),
             ));
           }
         }
