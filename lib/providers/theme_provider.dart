@@ -6,7 +6,10 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.system;
 
   ThemeMode get mode => _mode;
-  bool get isDark => _mode == ThemeMode.dark;
+  bool get isDark => _mode == ThemeMode.dark ||
+      (_mode == ThemeMode.system &&
+          WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+              Brightness.dark);
 
   ThemeProvider() {
     _load();
@@ -33,6 +36,11 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> toggle() async {
-    await setMode(_mode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark);
+    // Pertimbangkan mode system agar toggle selalu berkebalikan dari tampilan aktual
+    final effectivelyDark = _mode == ThemeMode.dark ||
+        (_mode == ThemeMode.system &&
+            WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+                Brightness.dark);
+    await setMode(effectivelyDark ? ThemeMode.light : ThemeMode.dark);
   }
 }
