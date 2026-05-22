@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import 'add_recipe_screen.dart';
@@ -67,12 +68,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
+    final theme = context.watch<ThemeProvider>();
     if (user == null) return const SizedBox.shrink();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profil Saya'),
         actions: [
+          IconButton(
+            icon: Icon(theme.isDark ? Icons.dark_mode : Icons.light_mode),
+            tooltip: theme.isDark ? 'Mode Terang' : 'Mode Gelap',
+            onPressed: theme.toggle,
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
             tooltip: 'Keluar',

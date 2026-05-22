@@ -4,7 +4,6 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
@@ -95,22 +94,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-
     return Scaffold(
       appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(
         children: [
-          _sectionHeader('Tampilan'),
-          SwitchListTile(
-            value: themeProvider.isDark,
-            onChanged: (_) => themeProvider.toggle(),
-            title: const Text('Mode Gelap'),
-            subtitle: const Text('Aktifkan tema dark mode'),
-            secondary: Icon(themeProvider.isDark ? Icons.dark_mode : Icons.light_mode, color: AppTheme.primary),
-          ),
-          _divider(),
-
           _sectionHeader('Notifikasi'),
           SwitchListTile(
             value: _notifEnabled,
