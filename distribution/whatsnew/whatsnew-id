@@ -1,6 +1,12 @@
-Versi baru ResepKu!
-- Tambah fitur pencarian resep
-- Simpan resep favorit
-- Tambah resep sendiri
-- Database lokal untuk akses offline
-- Tampilan yang lebih menarik
+Pembaruan v1.1.0
+
+Fitur Baru:
+• Pemilik resep kini bisa mengedit resep langsung dari halaman komunitas
+
+Peningkatan Pencarian:
+• Cari resep berdasarkan bahan — ketik nama bahan untuk menemukan resep yang relevan
+
+Perbaikan Bug:
+• Swipe hapus di Favorit & Daftar Belanja lebih aman
+• Validasi input Waktu dan Porsi lebih akurat
+• Berbagai perbaikan performa dan stabilitas
