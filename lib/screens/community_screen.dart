@@ -241,7 +241,8 @@ class _AllRecipesTabState extends State<_AllRecipesTab> {
         final q        = _searchQuery.toLowerCase();
         final matchQ   = r.title.toLowerCase().contains(q) ||
             r.authorName.toLowerCase().contains(q) ||
-            r.description.toLowerCase().contains(q);
+            r.description.toLowerCase().contains(q) ||
+            r.ingredients.any((ing) => ing.toLowerCase().contains(q));
         return matchCat && matchQ;
       }).toList();
     }
@@ -620,12 +621,6 @@ class _FollowingFeedTabState extends State<_FollowingFeedTab> {
   }
 }
 
-String _fmtView(int count) {
-  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
-  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
-  return '$count';
-}
-
 // ─── Community Card ──────────────────────────────────────────────────────────
 
 class _CommunityCard extends StatelessWidget {
@@ -724,7 +719,7 @@ class _CommunityCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Icon(Icons.remove_red_eye_outlined, size: 14, color: AppTheme.textSubOn(context)),
                 const SizedBox(width: 4),
-                Text(_fmtView(recipe.viewCount),
+                Text(AppConstants.formatCount(recipe.viewCount),
                     style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
               ]),
             ]),

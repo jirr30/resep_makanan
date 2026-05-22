@@ -1081,11 +1081,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-String _fmtViewHome(int count) {
-  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
-  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
-  return '$count';
-}
 
 // ── Community Feed Card (main list) ───────────────────────────────────────────
 
@@ -1152,7 +1147,7 @@ class _CommunityFeedCard extends StatelessWidget {
                           : '-',
                       context),
                   _meta(Icons.remove_red_eye_outlined, Colors.blueGrey,
-                      _fmtViewHome(recipe.viewCount), context),
+                      AppConstants.formatCount(recipe.viewCount), context),
                   _meta(Icons.timer_outlined, AppTheme.primary,
                       '${recipe.cookingTime} mnt', context),
                   if (recipe.category.isNotEmpty)
@@ -1441,7 +1436,9 @@ class _AllMyRecipesScreenState extends State<_AllMyRecipesScreen> {
           : widget.recipes
               .where((r) =>
                   r.title.toLowerCase().contains(query) ||
-                  r.category.toLowerCase().contains(query))
+                  r.category.toLowerCase().contains(query) ||
+                  r.description.toLowerCase().contains(query) ||
+                  r.ingredients.any((ing) => ing.toLowerCase().contains(query)))
               .toList();
     });
   }
