@@ -2,18 +2,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
+import '../models/recipe.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
+import '../utils/constants.dart';
 import 'auth_gate_screen.dart';
+import 'edit_recipe_screen.dart';
 import 'profile_screen.dart';
 import 'user_profile_screen.dart';
-
-String _formatViewCount(int count) {
-  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
-  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
-  return '$count';
-}
 
 class CommunityDetailScreen extends StatefulWidget {
   final CommunityRecipe recipe;
@@ -263,6 +260,18 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     }
   }
 
+  Future<void> _editRecipe() async {
+    // Cari salinan lokal terlebih dahulu agar id SQLite tersedia
+    Recipe? local = await _db.getRecipeByFirestoreId(widget.recipe.id);
+    final recipeToEdit = local ??
+        widget.recipe.toRecipe().copyWith(firestoreId: widget.recipe.id);
+    if (!mounted) return;
+    await Navigator.push<Recipe>(
+      context,
+      MaterialPageRoute(builder: (_) => EditRecipeScreen(recipe: recipeToEdit)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -338,12 +347,18 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 onPressed: _toggleLike,
                 tooltip: _isLiked ? 'Batal like' : 'Like resep ini',
               ),
-        if (_isOwner)
+        if (_isOwner) ...[
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, color: Colors.white),
+            onPressed: _editRecipe,
+            tooltip: 'Edit resep',
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.white),
             onPressed: _deleteFromCommunity,
             tooltip: 'Hapus dari komunitas',
           ),
+        ],
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(fit: StackFit.expand, children: [
@@ -414,7 +429,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 const SizedBox(width: 10),
                 const Icon(Icons.remove_red_eye_outlined, color: Colors.white70, size: 14),
                 const SizedBox(width: 4),
-                Text(_formatViewCount(_viewCount),
+                Text(AppConstants.formatCount(_viewCount),
                     style: const TextStyle(color: Colors.white70, fontSize: 13)),
               ]),
             ]),
@@ -483,7 +498,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               Icon(Icons.remove_red_eye_outlined,
                   size: 12, color: AppTheme.textSubOn(context)),
               const SizedBox(width: 4),
-              Text('${_formatViewCount(_viewCount)} kali dilihat',
+              Text('${AppConstants.formatCount(_viewCount)} kali dilihat',
                   style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12)),
             ]),
           ]),
@@ -768,18 +783,33 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     if (_isOwner) {
       return SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: OutlinedButton.icon(
-            onPressed: _deleteFromCommunity,
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            label: const Text('Hapus dari Komunitas',
-                style: TextStyle(color: Colors.red)),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: const BorderSide(color: Colors.red),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Row(children: [
+            OutlinedButton.icon(
+              onPressed: _deleteFromCommunity,
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label: const Text('Hapus', style: TextStyle(color: Colors.red)),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                side: const BorderSide(color: Colors.red),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _editRecipe,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit Resep'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ]),
         ),
       );
     }

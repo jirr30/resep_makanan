@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
+import '../utils/constants.dart';
 import 'community_detail_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
@@ -270,11 +271,7 @@ class _StatCol extends StatelessWidget {
     );
   }
 
-  String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}jt';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}rb';
-    return '$n';
-  }
+  String _fmt(int n) => AppConstants.formatCount(n);
 }
 
 class _VertDivider extends StatelessWidget {
@@ -283,11 +280,6 @@ class _VertDivider extends StatelessWidget {
         width: 1, height: 36, color: AppTheme.borderOn(context));
 }
 
-String _fmtView(int count) {
-  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
-  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
-  return '$count';
-}
 
 // ─── Recipe Card ──────────────────────────────────────────────────────────────
 
@@ -339,7 +331,7 @@ class _PublicRecipeCard extends StatelessWidget {
                   Icon(Icons.remove_red_eye_outlined, size: 13,
                       color: AppTheme.textSubOn(context)),
                   const SizedBox(width: 4),
-                  Text(_fmtView(recipe.viewCount),
+                  Text(AppConstants.formatCount(recipe.viewCount),
                       style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
                 ]),
                 if (recipe.publishedAt != null) ...[

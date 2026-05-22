@@ -177,10 +177,23 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
         padding: const EdgeInsets.only(right: 16),
         child: const Icon(Icons.delete, color: Colors.white),
       ),
-      onDismissed: (_) async {
+      confirmDismiss: (_) async {
+        final id = item['id'] as int;
+        try {
+          await _db.deleteShoppingItem(id);
+          return true;
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Gagal menghapus item. Coba lagi.')),
+            );
+          }
+          return false;
+        }
+      },
+      onDismissed: (_) {
         final id = item['id'] as int;
         setState(() => _items.removeWhere((i) => i['id'] == id));
-        await _db.deleteShoppingItem(id);
       },
       child: ListTile(
         leading: Checkbox(

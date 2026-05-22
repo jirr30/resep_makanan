@@ -125,10 +125,22 @@ class DatabaseService {
     try {
       final db = await database;
       final maps = await db.query('recipes',
-        where: 'title LIKE ? OR category LIKE ? OR description LIKE ?',
-        whereArgs: ['%$query%', '%$query%', '%$query%']);
+        where: 'title LIKE ? OR category LIKE ? OR description LIKE ? OR ingredients LIKE ?',
+        whereArgs: ['%$query%', '%$query%', '%$query%', '%$query%']);
       return maps.map(Recipe.fromMap).toList();
     } catch (_) { return []; }
+  }
+
+  Future<Recipe?> getRecipeByFirestoreId(String firestoreId) async {
+    try {
+      final db = await database;
+      final rows = await db.query('recipes',
+          where: 'firestoreId = ?',
+          whereArgs: [firestoreId],
+          limit: 1);
+      if (rows.isEmpty) return null;
+      return Recipe.fromMap(rows.first);
+    } catch (_) { return null; }
   }
 
   Future<List<Recipe>> getByCategory(String category) async {

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
+import '../utils/constants.dart';
 import 'add_recipe_screen.dart';
 import 'community_detail_screen.dart';
 
@@ -317,7 +318,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Row(children: [
           _StatCard(
             label: 'Total Dilihat',
-            value: _fmtView(s.totalViews),
+            value: AppConstants.formatCount(s.totalViews),
             icon: Icons.remove_red_eye_outlined,
             color: Colors.blueGrey,
           ),
@@ -352,11 +353,7 @@ class _FollowStat extends StatelessWidget {
     );
   }
 
-  String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}jt';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}rb';
-    return '$n';
-  }
+  String _fmt(int n) => AppConstants.formatCount(n);
 }
 
 class _StatCard extends StatelessWidget {
@@ -388,11 +385,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-String _fmtView(int count) {
-  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}jt';
-  if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}rb';
-  return '$count';
-}
 
 class _ProfileRecipeCard extends StatelessWidget {
   final CommunityRecipe recipe;
@@ -445,7 +437,7 @@ class _ProfileRecipeCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Icon(Icons.remove_red_eye_outlined, size: 13, color: AppTheme.textSubOn(context)),
                 const SizedBox(width: 4),
-                Text(_fmtView(recipe.viewCount), style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
+                Text(AppConstants.formatCount(recipe.viewCount), style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
               ]),
               if (recipe.publishedAt != null) ...[
                 const SizedBox(height: 4),
