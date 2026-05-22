@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/recipe.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
@@ -1306,6 +1307,7 @@ class _AppDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final theme = context.watch<ThemeProvider>();
     return Drawer(
       child: SafeArea(
         child: Column(children: [
@@ -1373,11 +1375,29 @@ class _AppDrawer extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-          _DrawerItem(
-              icon: Icons.logout,
-              label: 'Keluar',
-              color: Colors.red,
-              onTap: () => _signOut(context)),
+          Row(
+            children: [
+              Expanded(
+                child: _DrawerItem(
+                  icon: Icons.logout,
+                  label: 'Keluar',
+                  color: Colors.red,
+                  onTap: () => _signOut(context),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: IconButton(
+                  icon: Icon(
+                    theme.isDark ? Icons.dark_mode : Icons.light_mode,
+                    color: AppTheme.primary,
+                  ),
+                  tooltip: theme.isDark ? 'Mode Terang' : 'Mode Gelap',
+                  onPressed: theme.toggle,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
         ]),
       ),
