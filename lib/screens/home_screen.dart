@@ -972,7 +972,7 @@ class _HomeScreenState extends State<HomeScreen> {
             margin: const EdgeInsets.only(top: 12, bottom: 8),
             width: 40, height: 4,
             decoration: BoxDecoration(
-                color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                color: AppTheme.borderOn(context), borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -995,10 +995,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (items.isEmpty) {
                   return Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.notifications_none, size: 56, color: Colors.grey[400]),
+                      Icon(Icons.notifications_none, size: 56, color: AppTheme.textSubOn(context)),
                       const SizedBox(height: 12),
                       Text('Belum ada aktivitas komunitas',
-                          style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+                          style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 14)),
                     ]),
                   );
                 }
@@ -1842,7 +1842,7 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
           margin: const EdgeInsets.only(top: 12, bottom: 8),
           width: 40, height: 4,
           decoration: BoxDecoration(
-              color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+              color: AppTheme.borderOn(context), borderRadius: BorderRadius.circular(2)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),

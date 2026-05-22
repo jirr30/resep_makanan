@@ -358,9 +358,9 @@ class _CommunitySearchCard extends StatelessWidget {
                       width: 72,
                       height: 72,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder(),
+                      errorBuilder: (_, __, ___) => _placeholder(context),
                     )
-                  : _placeholder(),
+                  : _placeholder(context),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -419,10 +419,10 @@ class _CommunitySearchCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() => Container(
+  Widget _placeholder(BuildContext context) => Container(
         width: 72,
         height: 72,
-        color: const Color(0xFFE8F5E9),
+        color: AppTheme.surfaceOn(context),
         child: const Icon(Icons.restaurant, size: 30, color: AppTheme.primary),
       );
 }

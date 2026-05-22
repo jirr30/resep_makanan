@@ -118,12 +118,12 @@ class RecipeCard extends StatelessWidget {
 }
 
 Widget _buildImage(Recipe recipe, BuildContext context) {
-  const placeholder = SizedBox(
+  Widget placeholder() => SizedBox(
     height: 180,
     width: double.infinity,
     child: ColoredBox(
-      color: Color(0xFFE8F5E9),
-      child: Icon(Icons.restaurant, size: 60, color: AppTheme.primary),
+      color: AppTheme.surfaceOn(context),
+      child: const Icon(Icons.restaurant, size: 60, color: AppTheme.primary),
     ),
   );
 
@@ -133,7 +133,7 @@ Widget _buildImage(Recipe recipe, BuildContext context) {
       height: 180,
       width: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => placeholder,
+      errorBuilder: (_, __, ___) => placeholder(),
     );
   }
   if (recipe.imageUrl.isNotEmpty) {
@@ -142,7 +142,7 @@ Widget _buildImage(Recipe recipe, BuildContext context) {
       height: 180,
       width: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => placeholder,
+      errorBuilder: (_, __, ___) => placeholder(),
       loadingBuilder: (_, child, progress) {
         if (progress == null) return child;
         return SizedBox(
@@ -155,7 +155,7 @@ Widget _buildImage(Recipe recipe, BuildContext context) {
       },
     );
   }
-  return placeholder;
+  return placeholder();
 }
 
 class _InfoChip extends StatelessWidget {

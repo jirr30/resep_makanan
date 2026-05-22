@@ -711,7 +711,7 @@ class _TimerSheetState extends State<_TimerSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.borderOn(context), borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 20),
           Text('Timer: ${widget.recipe.title}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17), textAlign: TextAlign.center),
           const SizedBox(height: 24),
@@ -721,7 +721,7 @@ class _TimerSheetState extends State<_TimerSheet> {
               child: CircularProgressIndicator(
                 value: progress,
                 strokeWidth: 10,
-                backgroundColor: Colors.grey[200],
+                backgroundColor: AppTheme.surfaceOn(context),
                 color: isDone ? Colors.green : AppTheme.primary,
               ),
             ),
