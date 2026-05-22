@@ -14,6 +14,7 @@ class Recipe {
   final double userRating; // rating dari pengguna
   final String difficulty;
   bool isFavorite;
+  final bool isOwned; // false jika disimpan dari resep komunitas orang lain
   // nutrisi
   final int calories;
   final double protein;
@@ -36,6 +37,7 @@ class Recipe {
     this.userRating = 0.0,
     required this.difficulty,
     this.isFavorite = false,
+    this.isOwned = true,
     this.calories = 0,
     this.protein = 0,
     this.carbs = 0,
@@ -59,6 +61,7 @@ class Recipe {
       'userRating': userRating,
       'difficulty': difficulty,
       'isFavorite': isFavorite ? 1 : 0,
+      'isOwned': isOwned ? 1 : 0,
       'calories': calories,
       'protein': protein,
       'carbs': carbs,
@@ -83,6 +86,7 @@ class Recipe {
       userRating: (map['userRating'] ?? 0.0).toDouble(),
       difficulty: map['difficulty'],
       isFavorite: map['isFavorite'] == 1,
+      isOwned: (map['isOwned'] ?? 1) == 1,
       calories: map['calories'] ?? 0,
       protein: (map['protein'] ?? 0.0).toDouble(),
       carbs: (map['carbs'] ?? 0.0).toDouble(),
@@ -94,6 +98,7 @@ class Recipe {
     int? id,
     String? firestoreId,
     bool? isFavorite,
+    bool? isOwned,
     double? userRating,
     String? imagePath,
     int? calories,
@@ -117,6 +122,7 @@ class Recipe {
       userRating: userRating ?? this.userRating,
       difficulty: difficulty,
       isFavorite: isFavorite ?? this.isFavorite,
+      isOwned: isOwned ?? this.isOwned,
       calories: calories ?? this.calories,
       protein: protein ?? this.protein,
       carbs: carbs ?? this.carbs,

@@ -106,6 +106,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
       userRating: widget.recipe.userRating,
       difficulty: _difficulty,
       isFavorite: widget.recipe.isFavorite,
+      isOwned:    widget.recipe.isOwned,
       calories:   nutrition?.calories ?? widget.recipe.calories,
       protein:    nutrition?.protein  ?? widget.recipe.protein,
       carbs:      nutrition?.carbs    ?? widget.recipe.carbs,

@@ -60,10 +60,13 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Pilih Resep untuk $mealType'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 350,
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: double.maxFinite,
+            maxHeight: MediaQuery.of(context).size.height * 0.45,
+          ),
           child: ListView.builder(
+            shrinkWrap: true,
             itemCount: _allRecipes.length,
             itemBuilder: (_, i) {
               final r = _allRecipes[i];

@@ -253,9 +253,9 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          _buildAppBar(),
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          _buildAppBar(innerBoxIsScrolled),
           SliverToBoxAdapter(child: _buildAuthorInfo()),
           SliverToBoxAdapter(child: _buildRatingSection()),
           SliverToBoxAdapter(
@@ -290,26 +290,25 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               ],
             ),
           ),
-          SliverFillRemaining(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildIngredients(),
-                _buildSteps(),
-                _buildNutrition(),
-                _buildComments(),
-              ],
-            ),
-          ),
         ],
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildIngredients(),
+            _buildSteps(),
+            _buildNutrition(),
+            _buildComments(),
+          ],
+        ),
       ),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
 
-  Widget _buildAppBar() {
+  Widget _buildAppBar(bool forceElevated) {
     return SliverAppBar(
       expandedHeight: 260,
+      forceElevated: forceElevated,
       pinned: true,
       backgroundColor: AppTheme.primary,
       actions: [
@@ -666,29 +665,79 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
         && widget.recipe.carbs == 0 && widget.recipe.fat == 0;
     if (noData) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.info_outline, size: 48, color: AppTheme.textSubOn(context)),
+        Icon(Icons.no_food, size: 60, color: AppTheme.textSubOn(context)),
         const SizedBox(height: 12),
         Text('Informasi nutrisi tidak tersedia',
-            style: TextStyle(color: AppTheme.textSubOn(context))),
+            style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 15)),
+        const SizedBox(height: 4),
+        Text('Pemilik resep belum menambahkan data nutrisi',
+            style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 12)),
       ]));
     }
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(children: [
-        _NutritionCard('Kalori', '${widget.recipe.calories}', 'kkal',
-            Icons.local_fire_department, Colors.orange),
-        const SizedBox(height: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Per porsi',
+              style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 13)),
+          const SizedBox(height: 16),
+          _NutritionRow(
+              label: 'Kalori',
+              value: '${widget.recipe.calories} kkal',
+              icon: Icons.local_fire_department,
+              color: Colors.orange),
+          _NutritionRow(
+              label: 'Protein',
+              value: '${widget.recipe.protein.toStringAsFixed(1)} g',
+              icon: Icons.egg,
+              color: Colors.blue),
+          _NutritionRow(
+              label: 'Karbohidrat',
+              value: '${widget.recipe.carbs.toStringAsFixed(1)} g',
+              icon: Icons.grain,
+              color: Colors.green),
+          _NutritionRow(
+              label: 'Lemak',
+              value: '${widget.recipe.fat.toStringAsFixed(1)} g',
+              icon: Icons.opacity,
+              color: Colors.red),
+          const SizedBox(height: 20),
+          if (widget.recipe.calories > 0) _buildMacroBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMacroBar() {
+    final total = (widget.recipe.protein * 4) + (widget.recipe.carbs * 4) + (widget.recipe.fat * 9);
+    if (total == 0) return const SizedBox();
+    final pProt = (widget.recipe.protein * 4) / total;
+    final pCarb = (widget.recipe.carbs * 4) / total;
+    final pFat  = (widget.recipe.fat * 9) / total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Distribusi Makronutrisi',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Row(children: [
+            Flexible(flex: (pProt * 100).round(), child: Container(height: 20, color: Colors.blue)),
+            Flexible(flex: (pCarb * 100).round(), child: Container(height: 20, color: Colors.green)),
+            Flexible(flex: (pFat  * 100).round(), child: Container(height: 20, color: Colors.red)),
+          ]),
+        ),
+        const SizedBox(height: 8),
         Row(children: [
-          Expanded(child: _NutritionCard('Protein',
-              widget.recipe.protein.toStringAsFixed(1), 'g', Icons.egg, Colors.blue)),
-          const SizedBox(width: 12),
-          Expanded(child: _NutritionCard('Karbo',
-              widget.recipe.carbs.toStringAsFixed(1), 'g', Icons.grain, Colors.amber)),
-          const SizedBox(width: 12),
-          Expanded(child: _NutritionCard('Lemak',
-              widget.recipe.fat.toStringAsFixed(1), 'g', Icons.opacity, Colors.red)),
+          _MacroLegend(color: Colors.blue,  label: 'Protein ${(pProt * 100).round()}%'),
+          const SizedBox(width: 16),
+          _MacroLegend(color: Colors.green, label: 'Karbo ${(pCarb * 100).round()}%'),
+          const SizedBox(width: 16),
+          _MacroLegend(color: Colors.red,   label: 'Lemak ${(pFat * 100).round()}%'),
         ]),
-      ]),
+      ],
     );
   }
 
@@ -1015,32 +1064,51 @@ class _CommentBubble extends StatelessWidget {
   }
 }
 
-class _NutritionCard extends StatelessWidget {
+class _NutritionRow extends StatelessWidget {
   final String label;
   final String value;
-  final String unit;
   final IconData icon;
   final Color color;
-
-  const _NutritionCard(this.label, this.value, this.unit, this.icon, this.color);
+  const _NutritionRow({required this.label, required this.value, required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Column(children: [
-        Icon(icon, color: color, size: 28),
-        const SizedBox(height: 8),
-        Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
-        Text(unit, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7))),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(width: 16),
+        Text(label, style: const TextStyle(fontSize: 15)),
+        const Spacer(),
+        Text(value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
       ]),
     );
+  }
+}
+
+class _MacroLegend extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _MacroLegend({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(3))),
+      const SizedBox(width: 4),
+      Text(label,
+          style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(context))),
+    ]);
   }
 }

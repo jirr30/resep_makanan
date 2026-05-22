@@ -622,6 +622,7 @@ class CommunityRecipe {
     rating:      averageRating,
     difficulty:  difficulty,
     isFavorite:  false,
+    isOwned:     false,
     calories:    calories,
     protein:     protein,
     carbs:       carbs,

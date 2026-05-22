@@ -19,7 +19,7 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'resep_makanan.db');
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, _) async {
         await _createAllTables(db);
         // Tidak ada seed data — user mulai dari nol
@@ -63,6 +63,12 @@ class DatabaseService {
             ],
           );
         }
+        if (oldVersion < 6) {
+          // Resep yang sudah ada adalah milik user sendiri (default 1 = true)
+          await db.execute(
+            'ALTER TABLE recipes ADD COLUMN isOwned INTEGER NOT NULL DEFAULT 1',
+          );
+        }
       },
     );
   }
@@ -78,6 +84,7 @@ class DatabaseService {
         cookingTime INTEGER NOT NULL, servings INTEGER NOT NULL,
         rating REAL NOT NULL DEFAULT 0, userRating REAL NOT NULL DEFAULT 0,
         difficulty TEXT NOT NULL, isFavorite INTEGER NOT NULL DEFAULT 0,
+        isOwned INTEGER NOT NULL DEFAULT 1,
         calories INTEGER NOT NULL DEFAULT 0, protein REAL NOT NULL DEFAULT 0,
         carbs REAL NOT NULL DEFAULT 0, fat REAL NOT NULL DEFAULT 0)''');
     await db.execute('''

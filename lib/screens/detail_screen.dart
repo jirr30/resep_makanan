@@ -154,10 +154,13 @@ Dibagikan dari aplikasi ResepKu
         content: Text('Resep berhasil dibagikan ke komunitas!'),
         backgroundColor: AppTheme.primary,
       ));
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gagal membagikan resep. Coba lagi.')),
+        SnackBar(
+          content: Text('Gagal membagikan: $e'),
+          duration: const Duration(seconds: 6),
+        ),
       );
     }
   }
@@ -229,25 +232,46 @@ Dibagikan dari aplikasi ResepKu
     final hasLocalImage = _recipe.imagePath != null && File(_recipe.imagePath!).existsSync();
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             expandedHeight: 280,
             pinned: true,
+            forceElevated: innerBoxIsScrolled,
             backgroundColor: AppTheme.primary,
             actions: [
-              IconButton(icon: const Icon(Icons.edit), onPressed: _openEdit, tooltip: 'Edit'),
               IconButton(
                 icon: Icon(_recipe.isFavorite ? Icons.favorite : Icons.favorite_border),
                 onPressed: _toggleFavorite,
                 tooltip: _recipe.isFavorite ? 'Hapus favorit' : 'Tambah favorit',
               ),
               IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe, tooltip: 'Bagikan'),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: _deleteRecipe,
-                tooltip: 'Hapus resep',
-              ),
+              if (_recipe.isOwned)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'edit') _openEdit();
+                    if (value == 'delete') _deleteRecipe();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Row(children: [
+                        Icon(Icons.edit_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Edit Resep'),
+                      ]),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(children: [
+                        Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                        SizedBox(width: 12),
+                        Text('Hapus Resep', style: TextStyle(color: Colors.red)),
+                      ]),
+                    ),
+                  ],
+                ),
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: hasLocalImage
@@ -259,97 +283,117 @@ Dibagikan dari aplikasi ResepKu
             ),
           ),
           SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(_recipe.category, style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
-                        ),
-                        const Spacer(),
-                        const Icon(Icons.star, color: Colors.amber, size: 18),
-                        const SizedBox(width: 4),
-                        Text(_recipe.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      ]),
-                      const SizedBox(height: 10),
-                      Text(_recipe.title, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
-                      const SizedBox(height: 8),
-                      Text(_recipe.description, style: TextStyle(fontSize: 15, color: AppTheme.textSubOn(context), height: 1.5)),
-                      const SizedBox(height: 16),
-                      Row(children: [
-                        _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: 'menit'),
-                        const SizedBox(width: 12),
-                        _StatCard(icon: Icons.people, value: '${_recipe.servings}', unit: 'porsi'),
-                        const SizedBox(width: 12),
-                        _StatCard(icon: Icons.bar_chart, value: _recipe.difficulty, unit: 'tingkat'),
-                      ]),
-                      const SizedBox(height: 16),
-                      // Serving scaler
-                      _buildServingScaler(),
-                      const SizedBox(height: 12),
-                      // Action buttons
-                      Row(children: [
-                        Expanded(child: ElevatedButton.icon(
-                          onPressed: _openCookingMode,
-                          icon: const Icon(Icons.play_circle),
-                          label: const Text('Mode Memasak'),
-                        )),
-                        const SizedBox(width: 10),
-                        Expanded(child: OutlinedButton.icon(
-                          onPressed: _openTimer,
-                          icon: const Icon(Icons.timer),
-                          label: const Text('Timer'),
-                        )),
-                      ]),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _addToShoppingList,
-                          icon: const Icon(Icons.shopping_cart_outlined),
-                          label: const Text('Tambah ke Daftar Belanja'),
-                        ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      const SizedBox(height: 8),
-                      _buildShareCommunityButton(),
-                      const SizedBox(height: 16),
-                      _buildRatingSection(),
-                    ],
+                      child: Text(_recipe.category, style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                    ),
+                    const Spacer(),
+                    const Icon(Icons.star, color: Colors.amber, size: 18),
+                    const SizedBox(width: 4),
+                    Text(_recipe.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ]),
+                  const SizedBox(height: 10),
+                  Text(_recipe.title, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textOn(context))),
+                  const SizedBox(height: 8),
+                  Text(_recipe.description, style: TextStyle(fontSize: 15, color: AppTheme.textSubOn(context), height: 1.5)),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: 'menit'),
+                    const SizedBox(width: 12),
+                    _StatCard(icon: Icons.people, value: '${_recipe.servings}', unit: 'porsi'),
+                    const SizedBox(width: 12),
+                    _StatCard(icon: Icons.bar_chart, value: _recipe.difficulty, unit: 'tingkat'),
+                  ]),
+                  const SizedBox(height: 16),
+                  _buildServingScaler(),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(child: ElevatedButton.icon(
+                      onPressed: _openCookingMode,
+                      icon: const Icon(Icons.play_circle),
+                      label: const Text('Mode Memasak'),
+                    )),
+                    const SizedBox(width: 10),
+                    Expanded(child: OutlinedButton.icon(
+                      onPressed: _openTimer,
+                      icon: const Icon(Icons.timer),
+                      label: const Text('Timer'),
+                    )),
+                  ]),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _addToShoppingList,
+                      icon: const Icon(Icons.shopping_cart_outlined),
+                      label: const Text('Tambah ke Daftar Belanja'),
+                    ),
                   ),
-                ),
-                TabBar(
-                  controller: _tabController,
-                  labelColor: AppTheme.primary,
-                  unselectedLabelColor: AppTheme.textSubOn(context),
-                  indicatorColor: AppTheme.primary,
-                  tabs: const [
-                    Tab(text: 'Bahan'),
-                    Tab(text: 'Cara Masak'),
-                    Tab(text: 'Nutrisi'),
-                  ],
-                ),
-                SizedBox(
-                  height: 420,
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [_buildIngredients(), _buildSteps(), _buildNutrition()],
-                  ),
-                ),
+                  const SizedBox(height: 8),
+                  if (_recipe.isOwned)
+                    _buildShareCommunityButton()
+                  else
+                    _buildSavedFromCommunityBadge(),
+                  const SizedBox(height: 16),
+                  _buildRatingSection(),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: TabBar(
+              controller: _tabController,
+              labelColor: AppTheme.primary,
+              unselectedLabelColor: AppTheme.textSubOn(context),
+              indicatorColor: AppTheme.primary,
+              tabs: const [
+                Tab(text: 'Bahan'),
+                Tab(text: 'Cara Masak'),
+                Tab(text: 'Nutrisi'),
               ],
             ),
           ),
         ],
+        body: TabBarView(
+          controller: _tabController,
+          children: [_buildIngredients(), _buildSteps(), _buildNutrition()],
+        ),
       ),
+    );
+  }
+
+  Widget _buildSavedFromCommunityBadge() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.teal.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.public, size: 18, color: Colors.teal),
+        const SizedBox(width: 10),
+        Text(
+          'Disimpan dari Komunitas',
+          style: TextStyle(
+            color: Colors.teal[700],
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+      ]),
     );
   }
 
