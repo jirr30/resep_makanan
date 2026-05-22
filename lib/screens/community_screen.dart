@@ -77,6 +77,10 @@ class _CommunityScreenState extends State<CommunityScreen> with SingleTickerProv
         ],
         bottom: TabBar(
           controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
           tabs: const [
             Tab(text: 'Semua Resep'),
             Tab(text: 'Mengikuti'),
