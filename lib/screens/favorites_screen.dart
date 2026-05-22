@@ -81,7 +81,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             padding: const EdgeInsets.only(right: 20),
                             child: const Icon(Icons.favorite_border, color: Colors.white),
                           ),
-                          onDismissed: (_) => _removeFavorite(_favorites[i]),
+                          confirmDismiss: (_) async {
+                            await _removeFavorite(_favorites[i]);
+                            return true;
+                          },
                           child: RecipeCard(
                             recipe: _favorites[i],
                             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(recipe: _favorites[i]))).then((_) => _load()),

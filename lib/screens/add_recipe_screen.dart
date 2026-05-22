@@ -173,14 +173,26 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                 controller: _timeCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Waktu (menit) *', prefixIcon: Icon(Icons.timer)),
-                validator: (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null,
+                validator: (v) {
+                  if (v?.trim().isEmpty == true) return 'Wajib diisi';
+                  final n = int.tryParse(v!.trim());
+                  if (n == null) return 'Harus berupa angka';
+                  if (n <= 0) return 'Harus lebih dari 0';
+                  return null;
+                },
               )),
               const SizedBox(width: 12),
               Expanded(child: TextFormField(
                 controller: _servingsCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Porsi *', prefixIcon: Icon(Icons.people)),
-                validator: (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null,
+                validator: (v) {
+                  if (v?.trim().isEmpty == true) return 'Wajib diisi';
+                  final n = int.tryParse(v!.trim());
+                  if (n == null) return 'Harus berupa angka';
+                  if (n <= 0) return 'Harus lebih dari 0';
+                  return null;
+                },
               )),
             ]),
             const SizedBox(height: 12),

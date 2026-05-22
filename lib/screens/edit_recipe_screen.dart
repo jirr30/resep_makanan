@@ -256,7 +256,17 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
       controller: ctrl,
       keyboardType: numeric ? TextInputType.number : null,
       decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
-      validator: required ? (v) => v?.trim().isEmpty == true ? 'Wajib diisi' : null : null,
+      validator: required
+          ? (v) {
+              if (v?.trim().isEmpty == true) return 'Wajib diisi';
+              if (numeric) {
+                final n = int.tryParse(v!.trim());
+                if (n == null) return 'Harus berupa angka';
+                if (n <= 0) return 'Harus lebih dari 0';
+              }
+              return null;
+            }
+          : null,
     );
   }
 
