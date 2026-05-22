@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/recipe.dart';
 import '../services/database_service.dart';
+import '../services/firestore_service.dart';
 import '../services/nutrition_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
@@ -115,6 +116,17 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
 
     try {
       await _db.updateRecipe(updated);
+
+      // Sync ke Firestore jika resep sudah dibagikan ke komunitas
+      if (updated.firestoreId != null) {
+        if (mounted) setState(() => _savingMessage = 'Sinkronisasi ke komunitas...');
+        try {
+          await FirestoreService().updateCommunityRecipe(updated.firestoreId!, updated);
+        } catch (_) {
+          // Sync gagal tidak membatalkan save lokal
+        }
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Resep berhasil diperbarui!'), backgroundColor: AppTheme.primary),

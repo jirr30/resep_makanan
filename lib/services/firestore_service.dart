@@ -293,6 +293,33 @@ class FirestoreService {
     await _recipes.doc(docId).delete();
   }
 
+  Future<void> updateCommunityRecipe(String docId, Recipe recipe) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Harus login untuk memperbarui resep');
+
+    String imageUrl = recipe.imageUrl;
+    if (recipe.imagePath != null && File(recipe.imagePath!).existsSync()) {
+      imageUrl = await _uploadLocalImage(recipe.imagePath!, user.uid);
+    }
+
+    await _recipes.doc(docId).update({
+      'title':       recipe.title,
+      'category':    recipe.category,
+      'description': recipe.description,
+      'imageUrl':    imageUrl,
+      'ingredients': recipe.ingredients,
+      'steps':       recipe.steps,
+      'cookingTime': recipe.cookingTime,
+      'servings':    recipe.servings,
+      'difficulty':  recipe.difficulty,
+      'calories':    recipe.calories,
+      'protein':     recipe.protein,
+      'carbs':       recipe.carbs,
+      'fat':         recipe.fat,
+      'updatedAt':   FieldValue.serverTimestamp(),
+    });
+  }
+
   // ─── User Profile Sync ───────────────────────────────────────────────────────
 
   Future<void> syncCurrentUserProfile() async {

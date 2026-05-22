@@ -207,24 +207,50 @@ Dibagikan dari aplikasi ResepKu
   }
 
   Future<void> _deleteRecipe() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Hapus Resep?'),
-        content: Text('Resep "${_recipe.title}" akan dihapus permanen.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
+    if (_recipe.firestoreId != null) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Hapus Resep?'),
+          content: Text('"${_recipe.title}" juga dibagikan di komunitas. Hapus dari mana?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'local'),
+              child: const Text('Koleksi Saja'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(context, 'both'),
+              child: const Text('Semua'),
+            ),
+          ],
+        ),
+      );
+      if (action == null) return;
       await _db.deleteRecipe(_recipe.id!);
-      if (mounted) Navigator.pop(context, 'deleted');
+      if (action == 'both') {
+        try { await FirestoreService().deleteRecipe(_recipe.firestoreId!); } catch (_) {}
+      }
+    } else {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Hapus Resep?'),
+          content: Text('Resep "${_recipe.title}" akan dihapus permanen.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+      await _db.deleteRecipe(_recipe.id!);
     }
+    if (mounted) Navigator.pop(context, 'deleted');
   }
 
   @override

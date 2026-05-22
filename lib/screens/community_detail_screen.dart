@@ -33,12 +33,14 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   bool _likeLoading   = false;
   int  _likes         = 0;
   bool _isSaving      = false;
+  bool _isSaved       = false;
 
   double _userRating    = 0.0;
   bool   _ratingLoading = false;
   double _averageRating = 0.0;
   int    _ratingCount   = 0;
   int    _viewCount     = 0;
+  int    _commentCount  = 0;
 
   bool? _isFollowing;    // null = belum dimuat
   bool  _followLoading = false;
@@ -54,10 +56,12 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     _averageRating  = widget.recipe.averageRating;
     _ratingCount    = widget.recipe.ratingCount;
     _viewCount      = widget.recipe.viewCount;
+    _commentCount   = widget.recipe.commentCount;
     _loadLikeStatus();
     _loadUserRating();
     _countView();
     _loadFollowStatus();
+    _checkIfSaved();
   }
 
   @override
@@ -107,6 +111,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     } finally {
       if (mounted) setState(() => _followLoading = false);
     }
+  }
+
+  Future<void> _checkIfSaved() async {
+    final saved = await _db.isCommunityRecipeSaved(widget.recipe.id);
+    if (mounted) setState(() => _isSaved = saved);
   }
 
   Future<void> _loadLikeStatus() async {
@@ -190,18 +199,22 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   Future<void> _saveToLocal() async {
     setState(() => _isSaving = true);
     try {
-      final alreadySaved = await _db.isCommunityRecipeSaved(
-        widget.recipe.title, widget.recipe.category);
+      final alreadySaved = await _db.isCommunityRecipeSaved(widget.recipe.id);
       if (!mounted) return;
       if (alreadySaved) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Resep ini sudah ada di koleksi kamu.'),
         ));
-        setState(() => _isSaving = false);
+        setState(() { _isSaving = false; _isSaved = true; });
         return;
       }
-      await _db.insertRecipe(widget.recipe.toRecipe());
+      // Simpan dengan firestoreId agar bisa dicek ulang dan di-sync nanti
+      final recipeToSave = widget.recipe.toRecipe().copyWith(
+        firestoreId: widget.recipe.id,
+      );
+      await _db.insertRecipe(recipeToSave);
       if (!mounted) return;
+      setState(() => _isSaved = true);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('"${widget.recipe.title}" disimpan ke koleksi kamu!'),
         backgroundColor: AppTheme.primary,
@@ -271,7 +284,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                 Tab(
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     const Text('Komentar'),
-                    if (widget.recipe.commentCount > 0) ...[
+                    if (_commentCount > 0) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -280,7 +293,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          '${widget.recipe.commentCount}',
+                          '$_commentCount',
                           style: const TextStyle(fontSize: 10, color: Colors.white),
                         ),
                       ),
@@ -742,7 +755,13 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
   }
 
   Widget _buildComments() {
-    return _CommentsTab(recipeId: widget.recipe.id, fs: _fs);
+    return _CommentsTab(
+      recipeId: widget.recipe.id,
+      fs: _fs,
+      onCommentAdded: () {
+        if (mounted) setState(() => _commentCount++);
+      },
+    );
   }
 
   Widget _buildBottomBar() {
@@ -784,14 +803,18 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
           const SizedBox(width: 12),
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveToLocal,
+              onPressed: (_isSaving || _isSaved) ? null : _saveToLocal,
               icon: _isSaving
                   ? const SizedBox(width: 18, height: 18,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Icon(Icons.bookmark_add_outlined),
-              label: Text(_isSaving ? 'Menyimpan...' : 'Simpan ke Koleksi'),
+                  : Icon(_isSaved ? Icons.bookmark : Icons.bookmark_add_outlined),
+              label: Text(_isSaving
+                  ? 'Menyimpan...'
+                  : _isSaved
+                      ? 'Tersimpan di Koleksi'
+                      : 'Simpan ke Koleksi'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
+                backgroundColor: _isSaved ? Colors.grey[400] : AppTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -807,7 +830,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
 class _CommentsTab extends StatefulWidget {
   final String recipeId;
   final FirestoreService fs;
-  const _CommentsTab({required this.recipeId, required this.fs});
+  final VoidCallback? onCommentAdded;
+  const _CommentsTab({required this.recipeId, required this.fs, this.onCommentAdded});
 
   @override
   State<_CommentsTab> createState() => _CommentsTabState();
@@ -840,6 +864,7 @@ class _CommentsTabState extends State<_CommentsTab> {
     try {
       await widget.fs.addComment(widget.recipeId, text);
       _textCtrl.clear();
+      widget.onCommentAdded?.call();
       if (mounted) {
         // Scroll ke bawah setelah komentar dikirim
         WidgetsBinding.instance.addPostFrameCallback((_) {
