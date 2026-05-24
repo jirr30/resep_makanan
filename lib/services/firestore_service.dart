@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart' show IconData, Icons;
 import '../models/recipe.dart';
 
 class FirestoreService {
@@ -157,13 +158,22 @@ class FirestoreService {
 
   // ─── Like ─────────────────────────────────────────────────────────────────────
 
-  Future<void> toggleLike(String docId, bool liked) async {
+  Future<void> toggleLike(String docId, bool liked, {String? recipeOwnerId, String? recipeTitle}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final likesRef = _recipes.doc(docId).collection('likes').doc(user.uid);
     if (liked) {
       await likesRef.set({'likedAt': FieldValue.serverTimestamp()});
       await _recipes.doc(docId).update({'likes': FieldValue.increment(1)});
+      if (recipeOwnerId != null) {
+        await _writeNotification(
+          recipeOwnerId,
+          type: 'like',
+          message: '${user.displayName ?? 'Seseorang'} menyukai resep "${recipeTitle ?? ''}"',
+          recipeId: docId,
+          recipeTitle: recipeTitle,
+        );
+      }
     } else {
       await likesRef.delete();
       await _recipes.doc(docId).update({'likes': FieldValue.increment(-1)});
@@ -235,7 +245,7 @@ class FirestoreService {
         .map((snap) => snap.docs.map(RecipeComment.fromFirestore).toList());
   }
 
-  Future<void> addComment(String recipeId, String text) async {
+  Future<void> addComment(String recipeId, String text, {String? recipeOwnerId, String? recipeTitle}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Harus login untuk berkomentar');
     final trimmed = text.trim();
@@ -254,6 +264,16 @@ class FirestoreService {
       'commentCount': FieldValue.increment(1),
     });
     await batch.commit();
+
+    if (recipeOwnerId != null) {
+      await _writeNotification(
+        recipeOwnerId,
+        type: 'comment',
+        message: '${user.displayName ?? 'Seseorang'} berkomentar: "$trimmed"',
+        recipeId: recipeId,
+        recipeTitle: recipeTitle,
+      );
+    }
   }
 
   Future<void> deleteComment(String recipeId, String commentId) async {
@@ -334,6 +354,82 @@ class FirestoreService {
     } catch (_) {}
   }
 
+  Future<void> saveFcmToken(String token) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await _users.doc(user.uid).set({
+        'fcmToken':  token,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  // ─── User Notifications ───────────────────────────────────────────────────────
+
+  CollectionReference _userNotifications(String uid) =>
+      _users.doc(uid).collection('notifications');
+
+  Future<void> _writeNotification(String recipientUid, {
+    required String type,
+    required String message,
+    String? recipeId,
+    String? recipeTitle,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid == recipientUid) return;
+    try {
+      await _userNotifications(recipientUid).add({
+        'type':          type,
+        'fromUserId':    user.uid,
+        'fromUserName':  user.displayName ?? 'Seseorang',
+        'fromUserPhoto': user.photoURL ?? '',
+        'message':       message,
+        'recipeId':      recipeId,
+        'recipeTitle':   recipeTitle,
+        'read':          false,
+        'createdAt':     FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
+  Future<List<UserNotification>> getUnreadNotifications() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return [];
+    try {
+      final snap = await _userNotifications(user.uid)
+          .where('read', isEqualTo: false)
+          .orderBy('createdAt', descending: true)
+          .limit(20)
+          .get();
+      return snap.docs.map((d) => UserNotification.fromFirestore(d)).toList();
+    } catch (_) { return []; }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final snap = await _userNotifications(user.uid)
+          .where('read', isEqualTo: false)
+          .get();
+      final batch = _db.batch();
+      for (final doc in snap.docs) {
+        batch.update(doc.reference, {'read': true});
+      }
+      await batch.commit();
+    } catch (_) {}
+  }
+
+  Stream<int> unreadNotificationCount() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+    return _userNotifications(user.uid)
+        .where('read', isEqualTo: false)
+        .snapshots()
+        .map((s) => s.docs.length);
+  }
+
   // ─── Follow ───────────────────────────────────────────────────────────────────
 
   Future<bool> isFollowing(String targetUid) async {
@@ -355,6 +451,11 @@ class FirestoreService {
     batch.set(_users.doc(user.uid),  {'followingCount': FieldValue.increment(1)},  SetOptions(merge: true));
     batch.set(_users.doc(targetUid), {'followerCount':  FieldValue.increment(1)},  SetOptions(merge: true));
     await batch.commit();
+    await _writeNotification(
+      targetUid,
+      type: 'follow',
+      message: '${user.displayName ?? 'Seseorang'} mulai mengikuti kamu',
+    );
   }
 
   Future<void> unfollowUser(String targetUid) async {
@@ -478,6 +579,57 @@ class AppNotification {
     this.imageUrl = '',
     this.recipe,
   });
+}
+
+class UserNotification {
+  final String  id;
+  final String  type;         // like | comment | follow
+  final String  fromUserId;
+  final String  fromUserName;
+  final String  fromUserPhoto;
+  final String  message;
+  final String? recipeId;
+  final String? recipeTitle;
+  final bool    read;
+  final DateTime? createdAt;
+
+  const UserNotification({
+    required this.id,
+    required this.type,
+    required this.fromUserId,
+    required this.fromUserName,
+    required this.fromUserPhoto,
+    required this.message,
+    this.recipeId,
+    this.recipeTitle,
+    required this.read,
+    this.createdAt,
+  });
+
+  factory UserNotification.fromFirestore(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return UserNotification(
+      id:            doc.id,
+      type:          d['type']          as String? ?? 'like',
+      fromUserId:    d['fromUserId']    as String? ?? '',
+      fromUserName:  d['fromUserName']  as String? ?? 'Seseorang',
+      fromUserPhoto: d['fromUserPhoto'] as String? ?? '',
+      message:       d['message']       as String? ?? '',
+      recipeId:      d['recipeId']      as String?,
+      recipeTitle:   d['recipeTitle']   as String?,
+      read:          d['read']          as bool? ?? false,
+      createdAt:     (d['createdAt']    as Timestamp?)?.toDate(),
+    );
+  }
+
+  IconData get icon {
+    switch (type) {
+      case 'like':    return Icons.favorite;
+      case 'comment': return Icons.comment;
+      case 'follow':  return Icons.person_add;
+      default:        return Icons.notifications;
+    }
+  }
 }
 
 class PagedResult {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/recipe.dart';
 import '../services/database_service.dart';
+import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
 import 'detail_screen.dart';
 
@@ -13,7 +14,8 @@ class MealPlannerScreen extends StatefulWidget {
 }
 
 class _MealPlannerScreenState extends State<MealPlannerScreen> {
-  final _db = DatabaseService();
+  final _db    = DatabaseService();
+  final _notif = NotificationService();
   DateTime _weekStart = _getMonday(DateTime.now());
   Map<String, List<Map<String, dynamic>>> _plans = {};
   List<Recipe> _allRecipes = [];
@@ -45,6 +47,21 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
       grouped.putIfAbsent(date, () => []).add(row);
     }
     if (mounted) setState(() { _plans = grouped; _allRecipes = recipes; _loading = false; });
+    await _scheduleNotifications(planRows);
+  }
+
+  Future<void> _scheduleNotifications(List<Map<String, dynamic>> planRows) async {
+    // Only schedule for today and future dates
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final futurePlans = planRows
+        .where((r) => (r['date'] as String).compareTo(today) >= 0)
+        .map((r) => {
+              'date':     r['date'] as String,
+              'mealType': r['mealType'] as String,
+              'title':    r['title'] as String,
+            })
+        .toList();
+    await _notif.scheduleMealReminders(futurePlans);
   }
 
   void _previousWeek() { _weekStart = _weekStart.subtract(const Duration(days: 7)); _load(); }

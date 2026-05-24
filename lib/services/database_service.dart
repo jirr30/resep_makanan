@@ -19,12 +19,24 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'resep_makanan.db');
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, _) async {
         await _createAllTables(db);
         // Tidak ada seed data — user mulai dari nol
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 7) {
+          await db.execute('''CREATE TABLE IF NOT EXISTS collections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            createdAt TEXT NOT NULL)''');
+          await db.execute('''CREATE TABLE IF NOT EXISTS collection_recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            collectionId INTEGER NOT NULL,
+            recipeId INTEGER NOT NULL,
+            addedAt TEXT NOT NULL,
+            UNIQUE(collectionId, recipeId))''');
+        }
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE recipes ADD COLUMN userRating REAL NOT NULL DEFAULT 0');
           await db.execute('ALTER TABLE recipes ADD COLUMN imagePath TEXT');
@@ -101,6 +113,18 @@ class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL, mealType TEXT NOT NULL,
         recipeId INTEGER NOT NULL)''');
+    await db.execute('''
+      CREATE TABLE collections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        createdAt TEXT NOT NULL)''');
+    await db.execute('''
+      CREATE TABLE collection_recipes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collectionId INTEGER NOT NULL,
+        recipeId INTEGER NOT NULL,
+        addedAt TEXT NOT NULL,
+        UNIQUE(collectionId, recipeId))''');
   }
 
   // ── Recipes ──────────────────────────────────────────────────────────────
@@ -282,6 +306,86 @@ class DatabaseService {
   Future<void> deleteMealPlan(int id) async {
     final db = await database;
     await db.delete('meal_plans', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ── Collections (Folder Resep) ────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getCollections() async {
+    try {
+      final db = await database;
+      final cols = await db.query('collections', orderBy: 'createdAt DESC');
+      final result = <Map<String, dynamic>>[];
+      for (final col in cols) {
+        final count = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM collection_recipes WHERE collectionId = ?',
+          [col['id']],
+        )) ?? 0;
+        result.add({...col, 'recipeCount': count});
+      }
+      return result;
+    } catch (_) { return []; }
+  }
+
+  Future<int> createCollection(String name) async {
+    final db = await database;
+    return db.insert('collections', {
+      'name': name,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> deleteCollection(int id) async {
+    final db = await database;
+    final batch = db.batch();
+    batch.delete('collection_recipes', where: 'collectionId = ?', whereArgs: [id]);
+    batch.delete('collections', where: 'id = ?', whereArgs: [id]);
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> addRecipeToCollection(int collectionId, int recipeId) async {
+    final db = await database;
+    await db.insert(
+      'collection_recipes',
+      {'collectionId': collectionId, 'recipeId': recipeId, 'addedAt': DateTime.now().toIso8601String()},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<void> removeRecipeFromCollection(int collectionId, int recipeId) async {
+    final db = await database;
+    await db.delete('collection_recipes',
+        where: 'collectionId = ? AND recipeId = ?',
+        whereArgs: [collectionId, recipeId]);
+  }
+
+  Future<List<Recipe>> getCollectionRecipes(int collectionId) async {
+    try {
+      final db = await database;
+      final maps = await db.rawQuery(
+        'SELECT r.* FROM recipes r '
+        'JOIN collection_recipes cr ON r.id = cr.recipeId '
+        'WHERE cr.collectionId = ? ORDER BY cr.addedAt DESC',
+        [collectionId],
+      );
+      return maps.map(Recipe.fromMap).toList();
+    } catch (_) { return []; }
+  }
+
+  Future<List<Map<String, dynamic>>> getCollectionsForRecipe(int recipeId) async {
+    try {
+      final db = await database;
+      return db.rawQuery(
+        'SELECT c.*, (SELECT COUNT(*) FROM collection_recipes cr2 WHERE cr2.collectionId = c.id) as recipeCount, '
+        '(SELECT COUNT(*) FROM collection_recipes cr3 WHERE cr3.collectionId = c.id AND cr3.recipeId = ?) as isAdded '
+        'FROM collections c ORDER BY c.createdAt DESC',
+        [recipeId],
+      );
+    } catch (_) { return []; }
+  }
+
+  Future<void> renameCollection(int id, String newName) async {
+    final db = await database;
+    await db.update('collections', {'name': newName}, where: 'id = ?', whereArgs: [id]);
   }
 
   // ── Backup ────────────────────────────────────────────────────────────────

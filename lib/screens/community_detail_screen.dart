@@ -2,12 +2,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/recipe.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 import 'auth_gate_screen.dart';
+import 'collections_screen.dart';
 import 'edit_recipe_screen.dart';
 import 'profile_screen.dart';
 import 'user_profile_screen.dart';
@@ -137,7 +139,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     setState(() => _likeLoading = true);
     final newLiked = !_isLiked;
     try {
-      await _fs.toggleLike(widget.recipe.id, newLiked);
+      await _fs.toggleLike(
+        widget.recipe.id, newLiked,
+        recipeOwnerId: widget.recipe.authorId,
+        recipeTitle:   widget.recipe.title,
+      );
       if (mounted) {
         setState(() {
           _isLiked = newLiked;
@@ -147,6 +153,19 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
     } finally {
       if (mounted) setState(() => _likeLoading = false);
     }
+  }
+
+  void _shareRecipe() {
+    final text = '''🍳 Cek resep ini di ResepKu!
+
+*${widget.recipe.title}*
+oleh ${widget.recipe.authorName}
+
+${widget.recipe.description.isNotEmpty ? '${widget.recipe.description}\n\n' : ''}⏱ ${widget.recipe.cookingTime} menit  •  🍽 ${widget.recipe.servings} porsi  •  ⭐ ${_averageRating > 0 ? _averageRating.toStringAsFixed(1) : '-'}
+
+Download ResepKu gratis:
+https://play.google.com/store/apps/details?id=com.resepin.resep_makanan''';
+    Share.share(text, subject: 'Resep ${widget.recipe.title} di ResepKu');
   }
 
   Future<void> _submitRating(double rating) async {
@@ -334,6 +353,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
       pinned: true,
       backgroundColor: AppTheme.primary,
       actions: [
+        IconButton(
+          icon: const Icon(Icons.share_outlined, color: Colors.white),
+          onPressed: _shareRecipe,
+          tooltip: 'Bagikan resep',
+        ),
         _likeLoading
             ? const Padding(
                 padding: EdgeInsets.all(12),
@@ -771,7 +795,9 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
 
   Widget _buildComments() {
     return _CommentsTab(
-      recipeId: widget.recipe.id,
+      recipeId:      widget.recipe.id,
+      recipeOwnerId: widget.recipe.authorId,
+      recipeTitle:   widget.recipe.title,
       fs: _fs,
       onCommentAdded: () {
         if (mounted) setState(() => _commentCount++);
@@ -830,7 +856,26 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               onPressed: _likeLoading ? null : _toggleLike,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          if (_isSaved) ...[
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: AppTheme.primary.withValues(alpha: 0.4)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.collections_bookmark_outlined, color: AppTheme.primary),
+                tooltip: 'Simpan ke Folder',
+                onPressed: () async {
+                  final local = await _db.getRecipeByFirestoreId(widget.recipe.id);
+                  if (local != null && mounted) {
+                    await showSaveToCollectionSheet(context, local);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: ElevatedButton.icon(
               onPressed: (_isSaving || _isSaved) ? null : _saveToLocal,
@@ -841,7 +886,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
               label: Text(_isSaving
                   ? 'Menyimpan...'
                   : _isSaved
-                      ? 'Tersimpan di Koleksi'
+                      ? 'Tersimpan'
                       : 'Simpan ke Koleksi'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _isSaved ? Colors.grey[400] : AppTheme.primary,
@@ -859,9 +904,17 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen>
 
 class _CommentsTab extends StatefulWidget {
   final String recipeId;
+  final String recipeOwnerId;
+  final String recipeTitle;
   final FirestoreService fs;
   final VoidCallback? onCommentAdded;
-  const _CommentsTab({required this.recipeId, required this.fs, this.onCommentAdded});
+  const _CommentsTab({
+    required this.recipeId,
+    required this.recipeOwnerId,
+    required this.recipeTitle,
+    required this.fs,
+    this.onCommentAdded,
+  });
 
   @override
   State<_CommentsTab> createState() => _CommentsTabState();
@@ -892,7 +945,11 @@ class _CommentsTabState extends State<_CommentsTab> {
     }
     setState(() => _sending = true);
     try {
-      await widget.fs.addComment(widget.recipeId, text);
+      await widget.fs.addComment(
+        widget.recipeId, text,
+        recipeOwnerId: widget.recipeOwnerId,
+        recipeTitle:   widget.recipeTitle,
+      );
       _textCtrl.clear();
       widget.onCommentAdded?.call();
       if (mounted) {

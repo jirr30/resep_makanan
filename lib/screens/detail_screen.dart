@@ -9,6 +9,7 @@ import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../services/nutrition_service.dart';
 import '../utils/app_theme.dart';
+import 'collections_screen.dart';
 import 'edit_recipe_screen.dart';
 import 'cooking_mode_screen.dart';
 import 'shopping_list_screen.dart';
@@ -272,6 +273,11 @@ Dibagikan dari aplikasi ResepKu
                 tooltip: _recipe.isFavorite ? 'Hapus favorit' : 'Tambah favorit',
               ),
               IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe, tooltip: 'Bagikan'),
+              IconButton(
+                icon: const Icon(Icons.collections_bookmark_outlined),
+                tooltip: 'Simpan ke Folder',
+                onPressed: () => showSaveToCollectionSheet(context, _recipe),
+              ),
               if (_recipe.isOwned)
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
