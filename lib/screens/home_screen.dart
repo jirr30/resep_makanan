@@ -1,21 +1,16 @@
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../models/recipe.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 import '../widgets/shimmer_card.dart';
 import '../widgets/error_view.dart';
 import 'auth_gate_screen.dart';
-import 'detail_screen.dart';
-import 'add_recipe_screen.dart';
 import 'favorites_screen.dart';
 import 'profile_screen.dart';
 import 'search_screen.dart';
@@ -34,36 +29,36 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final _db = DatabaseService();
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final _fs = FirestoreService();
+  late final TabController _tabController;
 
-  // Local (SQLite) — hanya untuk karousel pribadi & stats
-  List<String> _customCategories = [];
-  String _selectedCategory = 'Semua';
-  bool _loading = true;
-  int _favCount = 0;
-  List<Recipe> _allRecipes = [];
-  List<Recipe> _recentRecipes = [];
-  List<Recipe> _favoriteRecipes = [];
-
-  // Firestore carousels
+  // Community carousels (Untuk Kamu tab)
   bool _loadingCommunity = true;
   bool _firestoreLoaded = false;
   List<CommunityRecipe> _trendingCommunity = [];
   List<CommunityRecipe> _latestCommunity = [];
-  int _communityCount = 0;
 
-  // Community feed (main list — paginated Firestore)
-  List<CommunityRecipe> _communityFeed = [];
-  List<CommunityRecipe> _communityFiltered = [];
-  DocumentSnapshot? _lastFeedDoc;
-  bool _loadingFeed = true;
-  bool _loadingMoreFeed = false;
-  bool _hasMoreFeed = true;
-  bool _feedError = false;
+  // Terbaru feed (tab 2 — paginated Firestore)
+  String _selectedCategory = 'Semua';
+  List<CommunityRecipe> _terbaruFeed = [];
+  List<CommunityRecipe> _terbaruFiltered = [];
+  DocumentSnapshot? _lastTerbaruDoc;
+  bool _loadingTerbaru = true;
+  bool _loadingMoreTerbaru = false;
+  bool _hasMoreTerbaru = true;
+  bool _terbaruError = false;
 
-  // Sort & filter (applied client-side to loaded feed page)
+  // Following feed (tab 1)
+  List<CommunityRecipe> _followingFeed = [];
+  DocumentSnapshot? _lastFollowingDoc;
+  bool _loadingFollowing = false;
+  bool _loadingMoreFollowing = false;
+  bool _hasMoreFollowing = true;
+  bool _followingLoaded = false;
+  bool _followingError = false;
+
+  // Sort & filter (Terbaru tab)
   SortOption _sort = SortOption.newest;
   Set<String> _difficultyFilter = {};
   int _maxTime = 999;
@@ -73,60 +68,49 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index == 1 && !_followingLoaded) {
+      _loadFollowingPage(reset: true);
+    }
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────────
 
   Future<void> _load({bool forceFirestore = false}) async {
     if (forceFirestore || !_firestoreLoaded) {
-      await Future.wait([_loadLocal(), _loadCommunity(), _loadFeedPage(reset: true)]);
+      await Future.wait([_loadCommunity(), _loadTerbaruPage(reset: true)]);
     } else {
-      await Future.wait([_loadLocal(), _loadFeedPage(reset: true)]);
+      await _loadTerbaruPage(reset: true);
     }
-  }
-
-  Future<void> _loadLocal() async {
-    if (mounted) setState(() => _loading = true);
-    try {
-      final cats      = await _db.getCustomCategories();
-      final all       = await _db.getAllRecipes();
-      final favorites = all.where((r) => r.isFavorite).toList();
-      final recent    = (List<Recipe>.from(all)
-            ..sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0)))
-          .take(5)
-          .toList();
-      if (mounted) {
-        setState(() {
-          _customCategories = cats;
-          _allRecipes       = all;
-          _favCount         = favorites.length;
-          _recentRecipes    = recent;
-          _favoriteRecipes  = favorites;
-          _loading          = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    if (_followingLoaded) {
+      _loadFollowingPage(reset: true);
     }
   }
 
   Future<void> _loadCommunity() async {
     if (mounted) setState(() => _loadingCommunity = true);
     try {
-      final trending  = await _fs.getTrendingRecipes()
-          .catchError((_) => <CommunityRecipe>[]);
-      final latestRaw = await _fs.getLatestCommunityRecipes()
-          .catchError((_) => <CommunityRecipe>[]);
-      final count     = await _fs.getCommunityRecipeCount()
-          .catchError((_) => 0);
+      final trending  = await _fs.getTrendingRecipes().catchError((_) => <CommunityRecipe>[]);
+      final latestRaw = await _fs.getLatestCommunityRecipes().catchError((_) => <CommunityRecipe>[]);
       final trendingIds = trending.map((r) => r.id).toSet();
       final latest      = latestRaw.where((r) => !trendingIds.contains(r.id)).toList();
       if (mounted) {
         setState(() {
           _trendingCommunity = trending;
           _latestCommunity   = latest;
-          _communityCount    = count;
           _loadingCommunity  = false;
           _firestoreLoaded   = true;
         });
@@ -136,54 +120,54 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadFeedPage({bool reset = false}) async {
-    if (!reset && (_loadingMoreFeed || !_hasMoreFeed)) return;
+  Future<void> _loadTerbaruPage({bool reset = false}) async {
+    if (!reset && (_loadingMoreTerbaru || !_hasMoreTerbaru)) return;
     if (reset) {
       if (mounted) {
         setState(() {
-          _loadingFeed   = true;
-          _feedError     = false;
-          _communityFeed = [];
-          _lastFeedDoc   = null;
-          _hasMoreFeed   = true;
+          _loadingTerbaru = true;
+          _terbaruError   = false;
+          _terbaruFeed    = [];
+          _lastTerbaruDoc = null;
+          _hasMoreTerbaru = true;
         });
       }
     } else {
-      if (mounted) setState(() => _loadingMoreFeed = true);
+      if (mounted) setState(() => _loadingMoreTerbaru = true);
     }
     try {
       final cat    = _selectedCategory == 'Semua' ? null : _selectedCategory;
       final result = await _fs.getRecipesPaged(
-        startAfter: reset ? null : _lastFeedDoc,
+        startAfter: reset ? null : _lastTerbaruDoc,
         category: cat,
       );
       if (mounted) {
         setState(() {
           if (reset) {
-            _communityFeed = result.recipes;
+            _terbaruFeed = result.recipes;
           } else {
-            _communityFeed.addAll(result.recipes);
+            _terbaruFeed.addAll(result.recipes);
           }
-          _lastFeedDoc      = result.lastDoc;
-          _hasMoreFeed      = result.hasMore;
-          _loadingFeed      = false;
-          _loadingMoreFeed  = false;
-          _applyFeedFilters();
+          _lastTerbaruDoc     = result.lastDoc;
+          _hasMoreTerbaru     = result.hasMore;
+          _loadingTerbaru     = false;
+          _loadingMoreTerbaru = false;
+          _applyTerbaruFilters();
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _loadingFeed     = false;
-          _loadingMoreFeed = false;
-          if (reset) _feedError = true;
+          _loadingTerbaru     = false;
+          _loadingMoreTerbaru = false;
+          if (reset) _terbaruError = true;
         });
       }
     }
   }
 
-  void _applyFeedFilters() {
-    var list = List<CommunityRecipe>.from(_communityFeed);
+  void _applyTerbaruFilters() {
+    var list = List<CommunityRecipe>.from(_terbaruFeed);
     if (_difficultyFilter.isNotEmpty) {
       list = list.where((r) => _difficultyFilter.contains(r.difficulty)).toList();
     }
@@ -196,7 +180,50 @@ class _HomeScreenState extends State<HomeScreen> {
       case SortOption.timeAsc:    list.sort((a, b) => a.cookingTime.compareTo(b.cookingTime));
       case SortOption.nameAsc:    list.sort((a, b) => a.title.compareTo(b.title));
     }
-    _communityFiltered = list;
+    _terbaruFiltered = list;
+  }
+
+  Future<void> _loadFollowingPage({bool reset = false}) async {
+    if (!reset && (_loadingMoreFollowing || !_hasMoreFollowing)) return;
+    if (reset) {
+      if (mounted) {
+        setState(() {
+          _loadingFollowing = true;
+          _followingError   = false;
+          _followingFeed    = [];
+          _lastFollowingDoc = null;
+          _hasMoreFollowing = true;
+          _followingLoaded  = true;
+        });
+      }
+    } else {
+      if (mounted) setState(() => _loadingMoreFollowing = true);
+    }
+    try {
+      final result = await _fs.getFollowingFeed(
+          startAfter: reset ? null : _lastFollowingDoc);
+      if (mounted) {
+        setState(() {
+          if (reset) {
+            _followingFeed = result.recipes;
+          } else {
+            _followingFeed.addAll(result.recipes);
+          }
+          _lastFollowingDoc     = result.lastDoc;
+          _hasMoreFollowing     = result.hasMore;
+          _loadingFollowing     = false;
+          _loadingMoreFollowing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadingFollowing     = false;
+          _loadingMoreFollowing = false;
+          if (reset) _followingError = true;
+        });
+      }
+    }
   }
 
   void _showSortFilter() {
@@ -209,48 +236,15 @@ class _HomeScreenState extends State<HomeScreen> {
         maxTime: _maxTime,
         onApply: (sort, diff, maxTime) {
           setState(() {
-            _sort            = sort;
+            _sort             = sort;
             _difficultyFilter = diff;
-            _maxTime         = maxTime;
-            _applyFeedFilters();
+            _maxTime          = maxTime;
+            _applyTerbaruFilters();
           });
         },
       ),
     );
   }
-
-  Future<void> _showAddCategoryDialog() async {
-    final ctrl = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Tambah Kategori Baru'),
-        content: TextField(
-          controller: ctrl, autofocus: true,
-          decoration: const InputDecoration(hintText: 'Nama kategori...'),
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
-          ElevatedButton(
-            onPressed: () async {
-              if (ctrl.text.trim().isNotEmpty) {
-                final nav = Navigator.of(context);
-                await _db.addCustomCategory(ctrl.text.trim());
-                nav.pop();
-              }
-            },
-            child: const Text('Tambah'),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    _loadLocal();
-  }
-
-  List<String> get _allCategories =>
-      [...AppConstants.categories, ..._customCategories.where((c) => !AppConstants.categories.contains(c))];
 
   bool get _hasActiveFilter =>
       _difficultyFilter.isNotEmpty || _maxTime < 999 || _sort != SortOption.newest;
@@ -271,11 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen))
         .then((_) {
           setState(() => _bottomNavIndex = 0);
-          if (index == 1) {
-            _load(forceFirestore: true);
-          } else {
-            _loadLocal();
-          }
+          if (index == 1) _load(forceFirestore: true);
         });
   }
 
@@ -284,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: _AppDrawer(onRefresh: _load),
+      drawer: _AppDrawer(onRefresh: () => _load(forceFirestore: true)),
       appBar: AppBar(
         title: const Text('ResepKu',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
@@ -294,196 +284,33 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Cari resep',
             onPressed: () => Navigator.push(
               context, MaterialPageRoute(builder: (_) => const SearchScreen()),
-            ).then((_) => _loadLocal()),
-          ),
-          Stack(children: [
-            IconButton(
-              icon: const Icon(Icons.tune),
-              onPressed: _showSortFilter,
-              tooltip: 'Sort & Filter',
             ),
-            if (_hasActiveFilter)
-              Positioned(
-                right: 8, top: 8,
-                child: Container(
-                  width: 8, height: 8,
-                  decoration: const BoxDecoration(
-                      color: Colors.amber, shape: BoxShape.circle),
-                ),
-              ),
-          ]),
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_none),
             tooltip: 'Notifikasi',
             onPressed: () => _showNotificationPanel(context),
           ),
         ],
-      ),
-      body: NotificationListener<ScrollNotification>(
-        onNotification: (scroll) {
-          if (scroll is ScrollEndNotification &&
-              scroll.metrics.extentAfter < 300 &&
-              !_loadingMoreFeed &&
-              _hasMoreFeed &&
-              !_loadingFeed) {
-            _loadFeedPage();
-          }
-          return false;
-        },
-        child: RefreshIndicator(
-          onRefresh: () => _load(forceFirestore: true),
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(child: _buildGreetingHeader()),
-              SliverToBoxAdapter(child: _buildSearchBar()),
-              SliverToBoxAdapter(child: _buildQuickStats()),
-
-              // Karousel komunitas
-              if (_loadingCommunity) ...[
-                SliverToBoxAdapter(child: _buildCarouselShimmer(
-                  'Populer di Komunitas', Icons.local_fire_department, Colors.orange)),
-                SliverToBoxAdapter(child: _buildCarouselShimmer(
-                  'Terbaru dari Komunitas', Icons.public, Colors.teal)),
-              ] else ...[
-                if (_trendingCommunity.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: _buildCommunityCarousel(
-                      title: 'Populer di Komunitas',
-                      icon: Icons.local_fire_department,
-                      iconColor: Colors.orange,
-                      recipes: _trendingCommunity,
-                      onViewAll: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => const CommunityScreen()))
-                          .then((_) => _load(forceFirestore: true)),
-                    ),
-                  ),
-                if (_latestCommunity.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: _buildCommunityCarousel(
-                      title: 'Terbaru dari Komunitas',
-                      icon: Icons.public,
-                      iconColor: Colors.teal,
-                      recipes: _latestCommunity,
-                      onViewAll: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => const CommunityScreen()))
-                          .then((_) => _load(forceFirestore: true)),
-                    ),
-                  ),
-              ],
-
-              // Karousel lokal
-              if (!_loading && _recentRecipes.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: _buildCarousel(
-                    title: 'Terakhir Ditambahkan',
-                    icon: Icons.access_time_outlined,
-                    recipes: _recentRecipes,
-                  ),
-                ),
-              if (!_loading && _favoriteRecipes.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: _buildCarousel(
-                    title: 'Favorit Kamu',
-                    icon: Icons.favorite_outline,
-                    iconColor: Colors.red,
-                    recipes: _favoriteRecipes,
-                    onViewAll: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => const FavoritesScreen()))
-                        .then((_) => _loadLocal()),
-                  ),
-                ),
-
-              // Filter chips & header
-              SliverToBoxAdapter(child: _buildCategories()),
-              if (_hasActiveFilter)
-                SliverToBoxAdapter(child: _buildActiveFilterChips()),
-              SliverToBoxAdapter(child: _buildSectionHeader()),
-
-              // Feed utama — semua resep komunitas
-              if (_feedError)
-                SliverFillRemaining(
-                  child: ErrorView(
-                    message: 'Gagal memuat resep komunitas.\nCoba lagi.',
-                    onRetry: () => _loadFeedPage(reset: true),
-                  ),
-                )
-              else if (_loadingFeed)
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (_, __) => const ShimmerCard(),
-                    childCount: 6,
-                  ),
-                )
-              else if (_communityFiltered.isEmpty)
-                SliverFillRemaining(
-                  child: EmptyView(
-                    icon: Icons.public_off,
-                    title: 'Belum Ada Resep',
-                    subtitle: _hasActiveFilter
-                        ? 'Coba ubah filter atau kategori'
-                        : 'Belum ada resep di komunitas.\nJadi yang pertama berbagi!',
-                    actionLabel: _hasActiveFilter ? null : 'Buka Komunitas',
-                    onAction: _hasActiveFilter
-                        ? null
-                        : () => Navigator.push(context,
-                                MaterialPageRoute(builder: (_) => const CommunityScreen()))
-                            .then((_) => _load(forceFirestore: true)),
-                  ),
-                )
-              else
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (_, i) => _CommunityFeedCard(
-                      recipe: _communityFiltered[i],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CommunityDetailScreen(recipe: _communityFiltered[i]),
-                        ),
-                      ).then((_) => _load(forceFirestore: true)),
-                    ),
-                    childCount: _communityFiltered.length,
-                  ),
-                ),
-
-              // Load more footer
-              if (_loadingMoreFeed)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppTheme.primary, strokeWidth: 2),
-                    ),
-                  ),
-                )
-              else if (!_hasMoreFeed && _communityFiltered.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: Text(
-                        'Semua ${_communityFiltered.length} resep sudah ditampilkan',
-                        style: TextStyle(
-                            fontSize: 12, color: AppTheme.textSubOn(context)),
-                      ),
-                    ),
-                  ),
-                ),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 96)),
-            ],
-          ),
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: AppTheme.primary,
+          unselectedLabelColor: AppTheme.textSubOn(context),
+          indicatorColor: AppTheme.primary,
+          tabs: const [
+            Tab(text: 'Untuk Kamu 🔥'),
+            Tab(text: 'Mengikuti 👥'),
+            Tab(text: 'Terbaru 🆕'),
+          ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AddRecipeScreen()),
-        ).then((_) => _loadLocal()),
-        backgroundColor: AppTheme.primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Tambah Resep', style: TextStyle(color: Colors.white)),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildUntukKamu(),
+          _buildMengikuti(),
+          _buildTerbaru(),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _bottomNavIndex,
@@ -509,6 +336,323 @@ class _HomeScreenState extends State<HomeScreen> {
               activeIcon: Icon(Icons.person),
               label: 'Profil'),
         ],
+      ),
+    );
+  }
+
+  // ── Tab 0: Untuk Kamu ─────────────────────────────────────────────────────────
+
+  Widget _buildUntukKamu() {
+    return RefreshIndicator(
+      onRefresh: () => _load(forceFirestore: true),
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(child: _buildGreetingHeader()),
+          SliverToBoxAdapter(child: _buildSearchBar()),
+
+          if (_loadingCommunity) ...[
+            SliverToBoxAdapter(child: _buildCarouselShimmer(
+                'Populer di Komunitas', Icons.local_fire_department, Colors.orange)),
+            SliverToBoxAdapter(child: _buildCarouselShimmer(
+                'Terbaru dari Komunitas', Icons.public, Colors.teal)),
+          ] else ...[
+            if (_trendingCommunity.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildCommunityCarousel(
+                  title: 'Populer di Komunitas',
+                  icon: Icons.local_fire_department,
+                  iconColor: Colors.orange,
+                  recipes: _trendingCommunity,
+                  onViewAll: () => _tabController.animateTo(2),
+                ),
+              ),
+            if (_latestCommunity.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildCommunityCarousel(
+                  title: 'Terbaru dari Komunitas',
+                  icon: Icons.public,
+                  iconColor: Colors.teal,
+                  recipes: _latestCommunity,
+                  onViewAll: () => _tabController.animateTo(2),
+                ),
+              ),
+          ],
+
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: OutlinedButton.icon(
+                onPressed: () => _tabController.animateTo(2),
+                icon: const Icon(Icons.explore_outlined, color: AppTheme.primary),
+                label: const Text('Jelajahi Semua Resep',
+                    style: TextStyle(color: AppTheme.primary)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.primary),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+        ],
+      ),
+    );
+  }
+
+  // ── Tab 1: Mengikuti ──────────────────────────────────────────────────────────
+
+  Widget _buildMengikuti() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 80, height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.people_outline, size: 40,
+                  color: AppTheme.primary),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Masuk untuk melihat feed',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
+                  color: AppTheme.textOn(context)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ikuti chef favoritmu dan lihat\nresep terbaru mereka di sini',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSubOn(context),
+                  height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AuthGateScreen())),
+              icon: const Icon(Icons.login, color: Colors.white),
+              label: const Text('Masuk / Daftar',
+                  style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ]),
+        ),
+      );
+    }
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (scroll) {
+        if (scroll is ScrollEndNotification &&
+            scroll.metrics.extentAfter < 300 &&
+            !_loadingMoreFollowing &&
+            _hasMoreFollowing &&
+            !_loadingFollowing) {
+          _loadFollowingPage();
+        }
+        return false;
+      },
+      child: RefreshIndicator(
+        onRefresh: () => _loadFollowingPage(reset: true),
+        child: !_followingLoaded
+            ? const Center(
+                child: CircularProgressIndicator(color: AppTheme.primary))
+            : _loadingFollowing
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppTheme.primary))
+                : _followingError
+                    ? ErrorView(
+                        message: 'Gagal memuat feed.\nCoba lagi.',
+                        onRetry: () => _loadFollowingPage(reset: true),
+                      )
+                    : _followingFeed.isEmpty
+                        ? ListView(
+                            children: [
+                              SizedBox(
+                                height: 400,
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(32),
+                                    child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.people_outline,
+                                              size: 64,
+                                              color: AppTheme.textSubOn(context)),
+                                          const SizedBox(height: 16),
+                                          Text('Belum ada postingan',
+                                              style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppTheme.textOn(context))),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Ikuti chef lain untuk melihat\nresep terbaru mereka di sini',
+                                            style: TextStyle(
+                                                fontSize: 13,
+                                                color: AppTheme.textSubOn(context),
+                                                height: 1.5),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          const SizedBox(height: 24),
+                                          OutlinedButton.icon(
+                                            onPressed: () => Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        const CommunityScreen())),
+                                            icon: const Icon(Icons.explore,
+                                                color: AppTheme.primary),
+                                            label: const Text('Temukan Chef',
+                                                style: TextStyle(
+                                                    color: AppTheme.primary)),
+                                            style: OutlinedButton.styleFrom(
+                                              side: const BorderSide(
+                                                  color: AppTheme.primary),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12)),
+                                            ),
+                                          ),
+                                        ]),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            itemCount: _followingFeed.length +
+                                (_loadingMoreFollowing ? 1 : 0),
+                            itemBuilder: (_, i) {
+                              if (i == _followingFeed.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 24),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                        color: AppTheme.primary, strokeWidth: 2),
+                                  ),
+                                );
+                              }
+                              return _CommunityFeedCard(
+                                recipe: _followingFeed[i],
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CommunityDetailScreen(
+                                        recipe: _followingFeed[i]),
+                                  ),
+                                ).then((_) => _loadFollowingPage(reset: true)),
+                              );
+                            },
+                          ),
+      ),
+    );
+  }
+
+  // ── Tab 2: Terbaru ────────────────────────────────────────────────────────────
+
+  Widget _buildTerbaru() {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (scroll) {
+        if (scroll is ScrollEndNotification &&
+            scroll.metrics.extentAfter < 300 &&
+            !_loadingMoreTerbaru &&
+            _hasMoreTerbaru &&
+            !_loadingTerbaru) {
+          _loadTerbaruPage();
+        }
+        return false;
+      },
+      child: RefreshIndicator(
+        onRefresh: () => _loadTerbaruPage(reset: true),
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _buildCategoryChips()),
+            if (_hasActiveFilter)
+              SliverToBoxAdapter(child: _buildActiveFilterChips()),
+            SliverToBoxAdapter(child: _buildTerbaruHeader()),
+
+            if (_terbaruError)
+              SliverFillRemaining(
+                child: ErrorView(
+                  message: 'Gagal memuat resep komunitas.\nCoba lagi.',
+                  onRetry: () => _loadTerbaruPage(reset: true),
+                ),
+              )
+            else if (_loadingTerbaru)
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (_, __) => const ShimmerCard(),
+                  childCount: 6,
+                ),
+              )
+            else if (_terbaruFiltered.isEmpty)
+              SliverFillRemaining(
+                child: EmptyView(
+                  icon: Icons.public_off,
+                  title: 'Belum Ada Resep',
+                  subtitle: _hasActiveFilter
+                      ? 'Coba ubah filter atau kategori'
+                      : 'Belum ada resep di komunitas.',
+                ),
+              )
+            else
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => _CommunityFeedCard(
+                    recipe: _terbaruFiltered[i],
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CommunityDetailScreen(recipe: _terbaruFiltered[i]),
+                      ),
+                    ).then((_) => _load(forceFirestore: true)),
+                  ),
+                  childCount: _terbaruFiltered.length,
+                ),
+              ),
+
+            if (_loadingMoreTerbaru)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                        color: AppTheme.primary, strokeWidth: 2),
+                  ),
+                ),
+              )
+            else if (!_hasMoreTerbaru && _terbaruFiltered.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Text(
+                      'Semua ${_terbaruFiltered.length} resep sudah ditampilkan',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.textSubOn(context)),
+                    ),
+                  ),
+                ),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          ],
+        ),
       ),
     );
   }
@@ -574,7 +718,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const SearchScreen()),
-      ).then((_) => _loadLocal()),
+      ),
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
@@ -603,51 +747,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Quick Stats ───────────────────────────────────────────────────────────────
+  // ── Category Chips (Terbaru tab) ──────────────────────────────────────────────
 
-  Widget _buildQuickStats() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Row(children: [
-        _StatCard(
-          icon: Icons.menu_book_outlined,
-          value: _loading ? '-' : '${_allRecipes.length}',
-          label: 'Resep Saya',
-          color: AppTheme.primary,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => _AllMyRecipesScreen(recipes: _allRecipes),
-            ),
-          ).then((_) => _loadLocal()),
-        ),
-        const SizedBox(width: 12),
-        _StatCard(
-          icon: Icons.favorite_outline,
-          value: _loading ? '-' : '$_favCount',
-          label: 'Favorit',
-          color: Colors.red,
-          onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const FavoritesScreen()))
-              .then((_) => _loadLocal()),
-        ),
-        const SizedBox(width: 12),
-        _StatCard(
-          icon: Icons.public,
-          value: _loadingCommunity ? '-' : '$_communityCount',
-          label: 'Komunitas',
-          color: Colors.teal,
-          onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const CommunityScreen()))
-              .then((_) => _load(forceFirestore: true)),
-        ),
-      ]),
-    );
-  }
-
-  // ── Category Chips ────────────────────────────────────────────────────────────
-
-  Widget _buildCategories() {
+  Widget _buildCategoryChips() {
+    final cats = ['Semua', ...AppConstants.categories];
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: SizedBox(
@@ -655,65 +758,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          itemCount: _allCategories.length + 1,
+          itemCount: cats.length,
           itemBuilder: (_, i) {
-            if (i == _allCategories.length) {
-              return GestureDetector(
-                onTap: _showAddCategoryDialog,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.primary),
-                  ),
-                  child: const Row(children: [
-                    Icon(Icons.add, size: 16, color: AppTheme.primary),
-                    SizedBox(width: 4),
-                    Text('Kategori',
-                        style: TextStyle(color: AppTheme.primary, fontSize: 13)),
-                  ]),
-                ),
-              );
-            }
-            final cat      = _allCategories[i];
+            final cat      = cats[i];
             final selected = cat == _selectedCategory;
-            final isCustom = !AppConstants.categories.contains(cat);
             return GestureDetector(
               onTap: () {
                 setState(() => _selectedCategory = cat);
-                _loadFeedPage(reset: true);
+                _loadTerbaruPage(reset: true);
               },
-              onLongPress: isCustom
-                  ? () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: Text('Hapus kategori "$cat"?'),
-                          content: const Text(
-                              'Resep dengan kategori ini tidak ikut terhapus.'),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Batal')),
-                            TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('Hapus',
-                                    style: TextStyle(color: Colors.red))),
-                          ],
-                        ),
-                      );
-                      if (confirm == true) {
-                        await _db.deleteCustomCategory(cat);
-                        if (_selectedCategory == cat) {
-                          setState(() => _selectedCategory = 'Semua');
-                        }
-                        _loadLocal();
-                        _loadFeedPage(reset: true);
-                      }
-                    }
-                  : null,
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -732,7 +785,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: selected
                         ? Colors.white
                         : Theme.of(context).textTheme.bodyMedium?.color,
-                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight:
+                        selected ? FontWeight.bold : FontWeight.normal,
                     fontSize: 13,
                   ),
                 ),
@@ -756,18 +810,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? 'Waktu ↑'
                     : 'A–Z',
             onDelete: () {
-              setState(() { _sort = SortOption.newest; _applyFeedFilters(); });
+              setState(() {
+                _sort = SortOption.newest;
+                _applyTerbaruFilters();
+              });
             },
           ),
-        ..._difficultyFilter.map((d) => _filterChip(d,
-            onDelete: () {
-              setState(() { _difficultyFilter.remove(d); _applyFeedFilters(); });
+        ..._difficultyFilter.map((d) => _filterChip(d, onDelete: () {
+              setState(() {
+                _difficultyFilter.remove(d);
+                _applyTerbaruFilters();
+              });
             })),
         if (_maxTime < 999)
-          _filterChip('≤$_maxTime mnt',
-              onDelete: () {
-                setState(() { _maxTime = 999; _applyFeedFilters(); });
-              }),
+          _filterChip('≤$_maxTime mnt', onDelete: () {
+            setState(() {
+              _maxTime = 999;
+              _applyTerbaruFilters();
+            });
+          }),
       ]),
     );
   }
@@ -784,27 +845,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Section Header ────────────────────────────────────────────────────────────
-
-  Widget _buildSectionHeader() {
-    final label = _selectedCategory == 'Semua'
-        ? 'Resep Komunitas'
-        : _selectedCategory;
+  Widget _buildTerbaruHeader() {
+    final label =
+        _selectedCategory == 'Semua' ? 'Resep Komunitas' : _selectedCategory;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Row(children: [
         const Icon(Icons.public, size: 18, color: AppTheme.primary),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textOn(context),
-          ),
-        ),
+        Text(label,
+            style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textOn(context))),
         const SizedBox(width: 8),
-        if (!_loadingFeed && _communityFiltered.isNotEmpty)
+        if (!_loadingTerbaru && _terbaruFiltered.isNotEmpty)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -812,13 +867,34 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              '${_communityFiltered.length}${_hasMoreFeed ? '+' : ''}',
+              '${_terbaruFiltered.length}${_hasMoreTerbaru ? '+' : ''}',
               style: const TextStyle(
                   fontSize: 12,
                   color: AppTheme.primary,
                   fontWeight: FontWeight.bold),
             ),
           ),
+        const Spacer(),
+        Stack(children: [
+          IconButton(
+            icon: const Icon(Icons.tune, size: 20),
+            onPressed: _showSortFilter,
+            tooltip: 'Sort & Filter',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+          if (_hasActiveFilter)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                    color: Colors.amber, shape: BoxShape.circle),
+              ),
+            ),
+        ]),
       ]),
     );
   }
@@ -893,59 +969,12 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: recipes.length,
             itemBuilder: (_, i) => _CommunityCarouselCard(
               recipe: recipes[i],
-              onTap: () => Navigator.push(context,
+              onTap: () => Navigator.push(
+                      context,
                       MaterialPageRoute(
-                          builder: (_) => CommunityDetailScreen(recipe: recipes[i])))
-                  .then((_) => _load()),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Local Carousel ────────────────────────────────────────────────────────────
-
-  Widget _buildCarousel({
-    required String title,
-    required IconData icon,
-    required List<Recipe> recipes,
-    Color? iconColor,
-    VoidCallback? onViewAll,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(children: [
-            Icon(icon, size: 18, color: iconColor ?? AppTheme.primary),
-            const SizedBox(width: 6),
-            Text(title,
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textOn(context))),
-            const Spacer(),
-            if (onViewAll != null)
-              GestureDetector(
-                onTap: onViewAll,
-                child: const Text('Lihat Semua',
-                    style: TextStyle(fontSize: 13, color: AppTheme.primary)),
-              ),
-          ]),
-        ),
-        SizedBox(
-          height: 180,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: recipes.length,
-            itemBuilder: (_, i) => _CarouselCard(
-              recipe: recipes[i],
-              onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => DetailScreen(recipe: recipes[i])))
-                  .then((_) => _loadLocal()),
+                          builder: (_) =>
+                              CommunityDetailScreen(recipe: recipes[i])))
+                  .then((_) => _load(forceFirestore: true)),
             ),
           ),
         ),
@@ -970,9 +999,11 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_, ctrl) => Column(children: [
           Container(
             margin: const EdgeInsets.only(top: 12, bottom: 8),
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
-                color: AppTheme.borderOn(context), borderRadius: BorderRadius.circular(2)),
+                color: AppTheme.borderOn(context),
+                borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -980,7 +1011,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Icon(Icons.notifications, color: AppTheme.primary),
               SizedBox(width: 10),
               Text('Aktivitas Komunitas',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  style:
+                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ]),
           ),
           const Divider(),
@@ -995,10 +1027,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (items.isEmpty) {
                   return Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.notifications_none, size: 56, color: AppTheme.textSubOn(context)),
+                      Icon(Icons.notifications_none,
+                          size: 56, color: AppTheme.textSubOn(context)),
                       const SizedBox(height: 12),
                       Text('Belum ada aktivitas komunitas',
-                          style: TextStyle(color: AppTheme.textSubOn(context), fontSize: 14)),
+                          style: TextStyle(
+                              color: AppTheme.textSubOn(context),
+                              fontSize: 14)),
                     ]),
                   );
                 }
@@ -1012,10 +1047,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () {
                       Navigator.of(sheetCtx).pop();
                       if (items[i].recipe != null) {
-                        Navigator.push(outerCtx, MaterialPageRoute(
-                          builder: (_) =>
-                              CommunityDetailScreen(recipe: items[i].recipe!),
-                        )).then((_) => _load(forceFirestore: true));
+                        Navigator.push(
+                          outerCtx,
+                          MaterialPageRoute(
+                            builder: (_) => CommunityDetailScreen(
+                                recipe: items[i].recipe!),
+                          ),
+                        ).then((_) => _load(forceFirestore: true));
                       }
                     },
                   ),
@@ -1029,60 +1067,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
-
-  const _StatCard({
-    required this.icon,
-    required this.value,
-    required this.label,
-    required this.color,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: 0.2)),
-          ),
-          child: Column(children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 6),
-            Text(value,
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold, color: color)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 11, color: AppTheme.textSubOn(context)),
-                textAlign: TextAlign.center),
-            if (onTap != null) ...[
-              const SizedBox(height: 2),
-              Icon(Icons.arrow_forward_ios,
-                  size: 9, color: color.withValues(alpha: 0.6)),
-            ],
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-
-// ── Community Feed Card (main list) ───────────────────────────────────────────
+// ── Community Feed Card ───────────────────────────────────────────────────────
 
 class _CommunityFeedCard extends StatelessWidget {
   final CommunityRecipe recipe;
@@ -1104,13 +1089,17 @@ class _CommunityFeedCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: recipe.imageUrl.isNotEmpty
                   ? Image.network(recipe.imageUrl,
-                      width: 80, height: 80, fit: BoxFit.cover,
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _placeholder())
                   : _placeholder(),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 Text(recipe.title,
                     style: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 14),
@@ -1123,36 +1112,45 @@ class _CommunityFeedCard extends StatelessWidget {
                     backgroundImage: recipe.authorPhoto.isNotEmpty
                         ? NetworkImage(recipe.authorPhoto)
                         : null,
-                    backgroundColor: AppTheme.primary.withValues(alpha: 0.2),
+                    backgroundColor:
+                        AppTheme.primary.withValues(alpha: 0.2),
                     child: recipe.authorPhoto.isEmpty
-                        ? const Icon(Icons.person, size: 11, color: AppTheme.primary)
+                        ? const Icon(Icons.person,
+                            size: 11, color: AppTheme.primary)
                         : null,
                   ),
                   const SizedBox(width: 5),
                   Expanded(
                     child: Text(recipe.authorName,
                         style: TextStyle(
-                            fontSize: 11, color: AppTheme.textSubOn(context)),
+                            fontSize: 11,
+                            color: AppTheme.textSubOn(context)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                   ),
                 ]),
                 const SizedBox(height: 6),
                 Wrap(spacing: 10, children: [
-                  _meta(Icons.favorite, Colors.red,
-                      '${recipe.likes}', context),
-                  _meta(Icons.star, Colors.amber,
+                  _meta(Icons.favorite, Colors.red, '${recipe.likes}',
+                      context),
+                  _meta(
+                      Icons.star,
+                      Colors.amber,
                       recipe.averageRating > 0
                           ? recipe.averageRating.toStringAsFixed(1)
                           : '-',
                       context),
-                  _meta(Icons.remove_red_eye_outlined, Colors.blueGrey,
-                      AppConstants.formatCount(recipe.viewCount), context),
+                  _meta(
+                      Icons.remove_red_eye_outlined,
+                      Colors.blueGrey,
+                      AppConstants.formatCount(recipe.viewCount),
+                      context),
                   _meta(Icons.timer_outlined, AppTheme.primary,
                       '${recipe.cookingTime} mnt', context),
                   if (recipe.category.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: AppTheme.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
@@ -1165,9 +1163,11 @@ class _CommunityFeedCard extends StatelessWidget {
                 if (recipe.publishedAt != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    DateFormat('d MMM yyyy', 'id_ID').format(recipe.publishedAt!),
+                    DateFormat('d MMM yyyy', 'id_ID')
+                        .format(recipe.publishedAt!),
                     style: TextStyle(
-                        fontSize: 10, color: AppTheme.textSubOn(context)),
+                        fontSize: 10,
+                        color: AppTheme.textSubOn(context)),
                   ),
                 ],
               ]),
@@ -1184,12 +1184,14 @@ class _CommunityFeedCard extends StatelessWidget {
       Icon(icon, size: 12, color: color),
       const SizedBox(width: 2),
       Text(text,
-          style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
+          style: TextStyle(
+              fontSize: 11, color: AppTheme.textSubOn(context))),
     ]);
   }
 
   Widget _placeholder() => Container(
-        width: 80, height: 80,
+        width: 80,
+        height: 80,
         decoration: BoxDecoration(
           color: AppTheme.primary.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
@@ -1223,7 +1225,9 @@ class _RealNotifTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: notif.imageUrl.isNotEmpty
             ? Image.network(notif.imageUrl,
-                width: 48, height: 48, fit: BoxFit.cover,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _placeholder())
             : _placeholder(),
       ),
@@ -1237,19 +1241,23 @@ class _RealNotifTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis),
         const SizedBox(height: 4),
         Text(_formatTimeAgo(notif.time),
-            style: TextStyle(fontSize: 11, color: AppTheme.textSubOn(context))),
+            style: TextStyle(
+                fontSize: 11, color: AppTheme.textSubOn(context))),
       ]),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     );
   }
 
   Widget _placeholder() => Container(
-        width: 48, height: 48,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: AppTheme.primary.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: const Icon(Icons.restaurant, color: AppTheme.primary, size: 24),
+        child:
+            const Icon(Icons.restaurant, color: AppTheme.primary, size: 24),
       );
 }
 
@@ -1278,7 +1286,8 @@ class _AppDrawer extends StatelessWidget {
               child: const Text('Batal')),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Keluar', style: TextStyle(color: Colors.red))),
+              child: const Text('Keluar',
+                  style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -1301,7 +1310,7 @@ class _AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user  = FirebaseAuth.instance.currentUser;
     final theme = context.watch<ThemeProvider>();
     return Drawer(
       child: SafeArea(
@@ -1316,11 +1325,14 @@ class _AppDrawer extends StatelessWidget {
               ),
             ),
             padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               CircleAvatar(
                 radius: 36,
-                backgroundImage:
-                    user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                backgroundImage: user?.photoURL != null
+                    ? NetworkImage(user!.photoURL!)
+                    : null,
                 backgroundColor: Colors.white.withValues(alpha: 0.3),
                 child: user?.photoURL == null
                     ? const Icon(Icons.person, size: 36, color: Colors.white)
@@ -1334,7 +1346,8 @@ class _AppDrawer extends StatelessWidget {
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 2),
               Text(user?.email ?? '',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  style:
+                      const TextStyle(color: Colors.white70, fontSize: 13)),
             ]),
           ),
           Expanded(
@@ -1352,15 +1365,18 @@ class _AppDrawer extends StatelessWidget {
                 _DrawerItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'Meal Planner',
-                    onTap: () => _go(context, const MealPlannerScreen())),
+                    onTap: () =>
+                        _go(context, const MealPlannerScreen())),
                 _DrawerItem(
                     icon: Icons.shopping_cart_outlined,
                     label: 'Daftar Belanja',
-                    onTap: () => _go(context, const ShoppingListScreen())),
+                    onTap: () =>
+                        _go(context, const ShoppingListScreen())),
                 _DrawerItem(
                     icon: Icons.favorite_outline,
                     label: 'Favorit',
-                    onTap: () => _go(context, const FavoritesScreen(), refresh: true)),
+                    onTap: () => _go(context, const FavoritesScreen(),
+                        refresh: true)),
                 const Divider(indent: 20, endIndent: 20),
                 _DrawerItem(
                     icon: Icons.settings_outlined,
@@ -1370,29 +1386,27 @@ class _AppDrawer extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-          Row(
-            children: [
-              Expanded(
-                child: _DrawerItem(
-                  icon: Icons.logout,
-                  label: 'Keluar',
-                  color: Colors.red,
-                  onTap: () => _signOut(context),
-                ),
+          Row(children: [
+            Expanded(
+              child: _DrawerItem(
+                icon: Icons.logout,
+                label: 'Keluar',
+                color: Colors.red,
+                onTap: () => _signOut(context),
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: IconButton(
-                  icon: Icon(
-                    theme.isDark ? Icons.dark_mode : Icons.light_mode,
-                    color: AppTheme.primary,
-                  ),
-                  tooltip: theme.isDark ? 'Mode Terang' : 'Mode Gelap',
-                  onPressed: theme.toggle,
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: IconButton(
+                icon: Icon(
+                  theme.isDark ? Icons.dark_mode : Icons.light_mode,
+                  color: AppTheme.primary,
                 ),
+                tooltip: theme.isDark ? 'Mode Terang' : 'Mode Gelap',
+                onPressed: theme.toggle,
               ),
-            ],
-          ),
+            ),
+          ]),
           const SizedBox(height: 8),
         ]),
       ),
@@ -1400,198 +1414,7 @@ class _AppDrawer extends StatelessWidget {
   }
 }
 
-// ── All My Recipes Screen ─────────────────────────────────────────────────────
-
-class _AllMyRecipesScreen extends StatefulWidget {
-  final List<Recipe> recipes;
-  const _AllMyRecipesScreen({required this.recipes});
-
-  @override
-  State<_AllMyRecipesScreen> createState() => _AllMyRecipesScreenState();
-}
-
-class _AllMyRecipesScreenState extends State<_AllMyRecipesScreen> {
-  late List<Recipe> _filtered;
-  String _query = '';
-  final _ctrl = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _filtered = widget.recipes;
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _onSearch(String q) {
-    final query = q.trim().toLowerCase();
-    setState(() {
-      _query    = query;
-      _filtered = query.isEmpty
-          ? widget.recipes
-          : widget.recipes
-              .where((r) =>
-                  r.title.toLowerCase().contains(query) ||
-                  r.category.toLowerCase().contains(query) ||
-                  r.description.toLowerCase().contains(query) ||
-                  r.ingredients.any((ing) => ing.toLowerCase().contains(query)))
-              .toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Resep Saya (${widget.recipes.length})'),
-      ),
-      body: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: SearchBar(
-            controller: _ctrl,
-            hintText: 'Cari resep...',
-            leading: Icon(Icons.search, color: AppTheme.textSubOn(context)),
-            trailing: [
-              if (_query.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () { _ctrl.clear(); _onSearch(''); },
-                ),
-            ],
-            onChanged: _onSearch,
-            elevation: const WidgetStatePropertyAll(0),
-            backgroundColor: WidgetStatePropertyAll(AppTheme.surfaceOn(context)),
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: AppTheme.borderOn(context)),
-              ),
-            ),
-          ),
-        ),
-        Expanded(
-          child: _filtered.isEmpty
-              ? Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.search_off, size: 56,
-                        color: AppTheme.textSubOn(context)),
-                    const SizedBox(height: 12),
-                    Text(
-                      _query.isEmpty
-                          ? 'Belum ada resep tersimpan'
-                          : 'Tidak ada resep untuk "$_query"',
-                      style: TextStyle(color: AppTheme.textSubOn(context)),
-                      textAlign: TextAlign.center,
-                    ),
-                  ]),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: _filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) {
-                    final r = _filtered[i];
-                    return Card(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => DetailScreen(recipe: r)),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: r.imagePath != null && r.imagePath!.isNotEmpty
-                                  ? Image.file(
-                                      File(r.imagePath!),
-                                      width: 68, height: 68, fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
-                                          _placeholder(),
-                                    )
-                                  : r.imageUrl.isNotEmpty
-                                      ? Image.network(
-                                          r.imageUrl,
-                                          width: 68, height: 68, fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              _placeholder(),
-                                        )
-                                      : _placeholder(),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                Text(r.title,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 4),
-                                Row(children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.primary
-                                          .withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(r.category,
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppTheme.primary)),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Icon(Icons.timer_outlined,
-                                      size: 13,
-                                      color: AppTheme.textSubOn(context)),
-                                  const SizedBox(width: 3),
-                                  Text('${r.cookingTime} mnt',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: AppTheme.textSubOn(context))),
-                                  if (r.isFavorite) ...[
-                                    const SizedBox(width: 8),
-                                    const Icon(Icons.favorite,
-                                        size: 13, color: Colors.red),
-                                  ],
-                                ]),
-                              ]),
-                            ),
-                            Icon(Icons.chevron_right,
-                                color: AppTheme.textSubOn(context)),
-                          ]),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _placeholder() => Container(
-        width: 68,
-        height: 68,
-        decoration: BoxDecoration(
-          color: AppTheme.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: const Icon(Icons.restaurant, color: AppTheme.primary),
-      );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Drawer Item ───────────────────────────────────────────────────────────────
 
 class _DrawerItem extends StatelessWidget {
   final IconData icon;
@@ -1615,8 +1438,10 @@ class _DrawerItem extends StatelessWidget {
               fontSize: 15, fontWeight: FontWeight.w500, color: c)),
       onTap: onTap,
       horizontalTitleGap: 8,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
 }
@@ -1648,16 +1473,20 @@ class _CommunityCarouselCard extends StatelessWidget {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(14)),
             child: recipe.imageUrl.isNotEmpty
                 ? Image.network(recipe.imageUrl,
-                    height: 95, width: double.infinity, fit: BoxFit.cover,
+                    height: 95,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _placeholder(context))
                 : _placeholder(context),
           ),
           Padding(
             padding: const EdgeInsets.all(8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(recipe.title,
                   style: TextStyle(
                       fontSize: 12,
@@ -1677,7 +1506,8 @@ class _CommunityCarouselCard extends StatelessWidget {
                 const SizedBox(width: 2),
                 Text('${recipe.likes}',
                     style: TextStyle(
-                        fontSize: 10, color: AppTheme.textSubOn(context))),
+                        fontSize: 10,
+                        color: AppTheme.textSubOn(context))),
                 const SizedBox(width: 6),
                 const Icon(Icons.star, size: 11, color: Colors.amber),
                 const SizedBox(width: 2),
@@ -1699,97 +1529,6 @@ class _CommunityCarouselCard extends StatelessWidget {
   Widget _placeholder(BuildContext context) => Container(
         height: 95,
         color: AppTheme.primary.withValues(alpha: 0.12),
-        child: const Center(
-            child: Icon(Icons.restaurant, color: AppTheme.primary, size: 28)),
-      );
-}
-
-// ── Local Carousel Card ───────────────────────────────────────────────────────
-
-class _CarouselCard extends StatelessWidget {
-  final Recipe recipe;
-  final VoidCallback onTap;
-  const _CarouselCard({required this.recipe, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 140,
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        decoration: BoxDecoration(
-          color: AppTheme.cardOn(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppTheme.borderOn(context)),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 6,
-                offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-            child: SizedBox(
-              height: 90, width: double.infinity,
-              child: _buildImage(context),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(recipe.title,
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textOn(context)),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 6),
-              Row(children: [
-                const Icon(Icons.star, size: 11, color: Colors.amber),
-                const SizedBox(width: 2),
-                Text(
-                  recipe.userRating > 0
-                      ? recipe.userRating.toStringAsFixed(1)
-                      : recipe.rating.toStringAsFixed(1),
-                  style: TextStyle(
-                      fontSize: 10, color: AppTheme.textSubOn(context)),
-                ),
-                const SizedBox(width: 6),
-                Icon(Icons.timer_outlined,
-                    size: 11, color: AppTheme.textSubOn(context)),
-                const SizedBox(width: 2),
-                Text('${recipe.cookingTime}m',
-                    style: TextStyle(
-                        fontSize: 10, color: AppTheme.textSubOn(context))),
-              ]),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildImage(BuildContext context) {
-    if (recipe.imagePath != null) {
-      final file = File(recipe.imagePath!);
-      if (file.existsSync()) {
-        return Image.file(file, fit: BoxFit.cover, width: double.infinity);
-      }
-    }
-    if (recipe.imageUrl.isNotEmpty) {
-      return Image.network(recipe.imageUrl,
-          fit: BoxFit.cover, width: double.infinity,
-          errorBuilder: (_, __, ___) => _placeholder(context));
-    }
-    return _placeholder(context);
-  }
-
-  Widget _placeholder(BuildContext context) => Container(
-        color: AppTheme.surfaceOn(context),
         child: const Center(
             child: Icon(Icons.restaurant, color: AppTheme.primary, size: 28)),
       );
@@ -1824,7 +1563,7 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
     super.initState();
     _sort       = widget.currentSort;
     _difficulty = Set.from(widget.difficultyFilter);
-    _maxTime    = widget.maxTime >= 999 ? 180.0 : widget.maxTime.toDouble();
+    _maxTime = widget.maxTime >= 999 ? 180.0 : widget.maxTime.toDouble();
   }
 
   @override
@@ -1837,15 +1576,18 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
       builder: (_, ctrl) => Column(children: [
         Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
-          width: 40, height: 4,
+          width: 40,
+          height: 4,
           decoration: BoxDecoration(
-              color: AppTheme.borderOn(context), borderRadius: BorderRadius.circular(2)),
+              color: AppTheme.borderOn(context),
+              borderRadius: BorderRadius.circular(2)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(children: [
             const Text('Sort & Filter',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const Spacer(),
             TextButton(
               onPressed: () {
@@ -1855,7 +1597,8 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                   _maxTime = 180;
                 });
               },
-              child: const Text('Reset', style: TextStyle(color: AppTheme.primary)),
+              child: const Text('Reset',
+                  style: TextStyle(color: AppTheme.primary)),
             ),
           ]),
         ),
@@ -1866,7 +1609,8 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
               const Text('Urutkan',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: [
                 _sortChip('Terbaru',  SortOption.newest),
@@ -1876,7 +1620,8 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
               ]),
               const SizedBox(height: 20),
               const Text('Kesulitan',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -1884,10 +1629,13 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
                     .map((d) => FilterChip(
                           label: Text(d),
                           selected: _difficulty.contains(d),
-                          selectedColor: AppTheme.primary.withValues(alpha: 0.15),
+                          selectedColor:
+                              AppTheme.primary.withValues(alpha: 0.15),
                           checkmarkColor: AppTheme.primary,
                           onSelected: (v) => setState(() {
-                            v ? _difficulty.add(d) : _difficulty.remove(d);
+                            v
+                                ? _difficulty.add(d)
+                                : _difficulty.remove(d);
                           }),
                         ))
                     .toList(),
@@ -1895,38 +1643,49 @@ class _SortFilterSheetState extends State<_SortFilterSheet> {
               const SizedBox(height: 20),
               Row(children: [
                 const Text('Waktu Maksimal',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
                 const Spacer(),
                 Text(
-                  _maxTime >= 180 ? 'Semua' : '${_maxTime.round()} menit',
+                  _maxTime >= 180
+                      ? 'Semua'
+                      : '${_maxTime.round()} menit',
                   style: const TextStyle(
-                      color: AppTheme.primary, fontWeight: FontWeight.bold),
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.bold),
                 ),
               ]),
               Slider(
                 value: _maxTime,
-                min: 15, max: 180, divisions: 11,
+                min: 15,
+                max: 180,
+                divisions: 11,
                 activeColor: AppTheme.primary,
                 onChanged: (v) => setState(() => _maxTime = v),
               ),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                 Text('15 mnt',
                     style: TextStyle(
-                        fontSize: 12, color: AppTheme.textSubOn(context))),
+                        fontSize: 12,
+                        color: AppTheme.textSubOn(context))),
                 Text('180 mnt+',
                     style: TextStyle(
-                        fontSize: 12, color: AppTheme.textSubOn(context))),
+                        fontSize: 12,
+                        color: AppTheme.textSubOn(context))),
               ]),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () {
-                  widget.onApply(
-                      _sort, _difficulty, _maxTime >= 180 ? 999 : _maxTime.round());
+                  widget.onApply(_sort, _difficulty,
+                      _maxTime >= 180 ? 999 : _maxTime.round());
                   Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('Terapkan Filter', style: TextStyle(fontSize: 16)),
+                child: const Text('Terapkan Filter',
+                    style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 16),
             ],
