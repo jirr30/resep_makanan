@@ -388,6 +388,18 @@ class DatabaseService {
     await db.update('collections', {'name': newName}, where: 'id = ?', whereArgs: [id]);
   }
 
+  // ── Clear ─────────────────────────────────────────────────────────────────
+
+  Future<void> clearAllLocalData() async {
+    final db = await database;
+    await db.delete('collection_recipes');
+    await db.delete('collections');
+    await db.delete('meal_plans');
+    await db.delete('shopping_list');
+    await db.delete('custom_categories');
+    await db.delete('recipes');
+  }
+
   // ── Backup ────────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> exportAllData() async {
