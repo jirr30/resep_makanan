@@ -19,12 +19,17 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'resep_makanan.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, _) async {
         await _createAllTables(db);
         // Tidak ada seed data — user mulai dari nol
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 8) {
+          await db.execute('ALTER TABLE recipes ADD COLUMN prepTime INTEGER NOT NULL DEFAULT 0');
+          await db.execute('ALTER TABLE recipes ADD COLUMN tags TEXT NOT NULL DEFAULT ""');
+          await db.execute('ALTER TABLE recipes ADD COLUMN tips TEXT NOT NULL DEFAULT ""');
+        }
         if (oldVersion < 7) {
           await db.execute('''CREATE TABLE IF NOT EXISTS collections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,7 +103,9 @@ class DatabaseService {
         difficulty TEXT NOT NULL, isFavorite INTEGER NOT NULL DEFAULT 0,
         isOwned INTEGER NOT NULL DEFAULT 1,
         calories INTEGER NOT NULL DEFAULT 0, protein REAL NOT NULL DEFAULT 0,
-        carbs REAL NOT NULL DEFAULT 0, fat REAL NOT NULL DEFAULT 0)''');
+        carbs REAL NOT NULL DEFAULT 0, fat REAL NOT NULL DEFAULT 0,
+        prepTime INTEGER NOT NULL DEFAULT 0,
+        tags TEXT NOT NULL DEFAULT "", tips TEXT NOT NULL DEFAULT "")''');
     await db.execute('''
       CREATE TABLE custom_categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)''');

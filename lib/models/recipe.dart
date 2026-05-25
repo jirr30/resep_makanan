@@ -20,6 +20,10 @@ class Recipe {
   final double protein;
   final double carbs;
   final double fat;
+  // extended fields
+  final int prepTime;        // waktu persiapan (menit)
+  final List<String> tags;   // e.g. ['Halal', 'Vegetarian']
+  final String tips;         // tips memasak opsional
 
   Recipe({
     this.id,
@@ -42,6 +46,9 @@ class Recipe {
     this.protein = 0,
     this.carbs = 0,
     this.fat = 0,
+    this.prepTime = 0,
+    this.tags = const [],
+    this.tips = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -66,6 +73,9 @@ class Recipe {
       'protein': protein,
       'carbs': carbs,
       'fat': fat,
+      'prepTime': prepTime,
+      'tags': tags.join('||'),
+      'tips': tips,
     };
   }
 
@@ -91,6 +101,13 @@ class Recipe {
       protein: (map['protein'] ?? 0.0).toDouble(),
       carbs: (map['carbs'] ?? 0.0).toDouble(),
       fat: (map['fat'] ?? 0.0).toDouble(),
+      prepTime: (map['prepTime'] as int?) ?? 0,
+      tags: () {
+        final raw = map['tags'] as String?;
+        if (raw == null || raw.isEmpty) return <String>[];
+        return raw.split('||');
+      }(),
+      tips: (map['tips'] as String?) ?? '',
     );
   }
 
@@ -105,6 +122,9 @@ class Recipe {
     double? protein,
     double? carbs,
     double? fat,
+    int? prepTime,
+    List<String>? tags,
+    String? tips,
   }) {
     return Recipe(
       id: id ?? this.id,
@@ -127,6 +147,9 @@ class Recipe {
       protein: protein ?? this.protein,
       carbs: carbs ?? this.carbs,
       fat: fat ?? this.fat,
+      prepTime: prepTime ?? this.prepTime,
+      tags: tags ?? this.tags,
+      tips: tips ?? this.tips,
     );
   }
 }

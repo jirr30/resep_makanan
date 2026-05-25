@@ -331,12 +331,31 @@ Dibagikan dari aplikasi ResepKu
                   Text(_recipe.description, style: TextStyle(fontSize: 15, color: AppTheme.textSubOn(context), height: 1.5)),
                   const SizedBox(height: 16),
                   Row(children: [
-                    _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: 'menit'),
-                    const SizedBox(width: 12),
+                    if (_recipe.prepTime > 0) ...[
+                      _StatCard(icon: Icons.hourglass_empty, value: '${_recipe.prepTime}', unit: 'persiapan'),
+                      const SizedBox(width: 8),
+                    ],
+                    _StatCard(icon: Icons.timer, value: '${_recipe.cookingTime}', unit: _recipe.prepTime > 0 ? 'masak' : 'menit'),
+                    const SizedBox(width: 8),
                     _StatCard(icon: Icons.people, value: '${_recipe.servings}', unit: 'porsi'),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     _StatCard(icon: Icons.bar_chart, value: _recipe.difficulty, unit: 'tingkat'),
                   ]),
+                  if (_recipe.tags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: _recipe.tags.map((tag) => Chip(
+                        label: Text(tag, style: const TextStyle(fontSize: 12, color: AppTheme.primary)),
+                        backgroundColor: AppTheme.primary.withValues(alpha: 0.08),
+                        side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                        visualDensity: VisualDensity.compact,
+                      )).toList(),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   _buildServingScaler(),
                   const SizedBox(height: 12),
@@ -528,25 +547,50 @@ Dibagikan dari aplikasi ResepKu
   }
 
   Widget _buildSteps() {
+    final hasTips = _recipe.tips.isNotEmpty;
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _recipe.steps.length,
-      itemBuilder: (_, i) => Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 32, height: 32,
-            decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(_recipe.steps[i], style: const TextStyle(fontSize: 15, height: 1.5)),
-          )),
-        ]),
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      itemCount: _recipe.steps.length + (hasTips ? 1 : 0),
+      itemBuilder: (_, i) {
+        if (hasTips && i == _recipe.steps.length) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Row(children: [
+                  Icon(Icons.lightbulb_outline, color: Colors.amber, size: 18),
+                  SizedBox(width: 6),
+                  Text('Tips Memasak', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amber)),
+                ]),
+                const SizedBox(height: 8),
+                Text(_recipe.tips, style: const TextStyle(fontSize: 14, height: 1.5)),
+              ]),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 32, height: 32,
+              decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
+              alignment: Alignment.center,
+              child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(_recipe.steps[i], style: const TextStyle(fontSize: 15, height: 1.5)),
+            )),
+          ]),
+        );
+      },
     );
   }
 

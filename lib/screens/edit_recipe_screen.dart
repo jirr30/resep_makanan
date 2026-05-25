@@ -19,18 +19,26 @@ class EditRecipeScreen extends StatefulWidget {
 }
 
 class _EditRecipeScreenState extends State<EditRecipeScreen> {
+  static const _availableTags = [
+    'Halal', 'Vegetarian', 'Vegan', 'Bebas Laktosa', 'Gluten Free',
+    'Pedas', 'Rendah Kalori', 'Tinggi Protein', 'Keto', 'Ramadan',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _db      = DatabaseService();
 
   late TextEditingController _titleCtrl;
   late TextEditingController _descCtrl;
   late TextEditingController _imageCtrl;
-  late TextEditingController _timeCtrl;
+  late TextEditingController _prepTimeCtrl;
+  late TextEditingController _cookTimeCtrl;
   late TextEditingController _servingsCtrl;
+  late TextEditingController _tipsCtrl;
   late String _category;
   late String _difficulty;
   late List<TextEditingController> _ingredientCtrls;
   late List<TextEditingController> _stepCtrls;
+  late Set<String> _selectedTags;
   String? _localImagePath;
   bool _saving = false;
   String _savingMessage = '';
@@ -42,18 +50,21 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
     _titleCtrl    = TextEditingController(text: r.title);
     _descCtrl     = TextEditingController(text: r.description);
     _imageCtrl    = TextEditingController(text: r.imageUrl);
-    _timeCtrl     = TextEditingController(text: r.cookingTime.toString());
+    _prepTimeCtrl = TextEditingController(text: r.prepTime > 0 ? r.prepTime.toString() : '');
+    _cookTimeCtrl = TextEditingController(text: r.cookingTime.toString());
     _servingsCtrl = TextEditingController(text: r.servings.toString());
+    _tipsCtrl     = TextEditingController(text: r.tips);
     _category     = AppConstants.categories.contains(r.category) ? r.category : AppConstants.categories[1];
     _difficulty   = r.difficulty;
     _localImagePath  = r.imagePath;
+    _selectedTags    = Set<String>.from(r.tags);
     _ingredientCtrls = r.ingredients.map((s) => TextEditingController(text: s)).toList();
     _stepCtrls       = r.steps.map((s) => TextEditingController(text: s)).toList();
   }
 
   @override
   void dispose() {
-    for (final c in [_titleCtrl, _descCtrl, _imageCtrl, _timeCtrl, _servingsCtrl]) {
+    for (final c in [_titleCtrl, _descCtrl, _imageCtrl, _prepTimeCtrl, _cookTimeCtrl, _servingsCtrl, _tipsCtrl]) {
       c.dispose();
     }
     for (final c in _ingredientCtrls) { c.dispose(); }
@@ -72,12 +83,29 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _saving = true; _savingMessage = 'Menghitung nutrisi...'; });
 
     final ingredients = _ingredientCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
-    final servings    = int.tryParse(_servingsCtrl.text) ?? widget.recipe.servings;
+    if (ingredients.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tambahkan minimal 2 bahan')),
+      );
+      return;
+    }
 
-    // Hitung ulang nutrisi — jika gagal, pertahankan nilai lama
+    final steps = _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+    if (steps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tambahkan minimal 1 langkah memasak')),
+      );
+      return;
+    }
+
+    setState(() { _saving = true; _savingMessage = 'Menghitung nutrisi...'; });
+
+    final servings = int.tryParse(_servingsCtrl.text) ?? widget.recipe.servings;
+    final prepTime = int.tryParse(_prepTimeCtrl.text) ?? 0;
+    final cookTime = int.tryParse(_cookTimeCtrl.text) ?? widget.recipe.cookingTime;
+
     NutritionResult? nutrition;
     try {
       nutrition = await NutritionService().estimateFromIngredients(
@@ -95,36 +123,36 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
       id:           widget.recipe.id,
       firestoreId:  widget.recipe.firestoreId,
       title:        _titleCtrl.text.trim(),
-      category:   _category,
-      description: _descCtrl.text.trim(),
-      imageUrl:   _imageCtrl.text.trim(),
-      imagePath:  _localImagePath,
-      ingredients: ingredients,
-      steps:      _stepCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList(),
-      cookingTime: int.tryParse(_timeCtrl.text) ?? widget.recipe.cookingTime,
-      servings:   servings,
-      rating:     widget.recipe.rating,
-      userRating: widget.recipe.userRating,
-      difficulty: _difficulty,
-      isFavorite: widget.recipe.isFavorite,
-      isOwned:    widget.recipe.isOwned,
-      calories:   nutrition?.calories ?? widget.recipe.calories,
-      protein:    nutrition?.protein  ?? widget.recipe.protein,
-      carbs:      nutrition?.carbs    ?? widget.recipe.carbs,
-      fat:        nutrition?.fat      ?? widget.recipe.fat,
+      category:     _category,
+      description:  _descCtrl.text.trim(),
+      imageUrl:     _imageCtrl.text.trim(),
+      imagePath:    _localImagePath,
+      ingredients:  ingredients,
+      steps:        steps,
+      cookingTime:  cookTime,
+      servings:     servings,
+      rating:       widget.recipe.rating,
+      userRating:   widget.recipe.userRating,
+      difficulty:   _difficulty,
+      isFavorite:   widget.recipe.isFavorite,
+      isOwned:      widget.recipe.isOwned,
+      calories:     nutrition?.calories ?? widget.recipe.calories,
+      protein:      nutrition?.protein  ?? widget.recipe.protein,
+      carbs:        nutrition?.carbs    ?? widget.recipe.carbs,
+      fat:          nutrition?.fat      ?? widget.recipe.fat,
+      prepTime:     prepTime,
+      tags:         _selectedTags.toList(),
+      tips:         _tipsCtrl.text.trim(),
     );
 
     try {
       await _db.updateRecipe(updated);
 
-      // Sync ke Firestore jika resep sudah dibagikan ke komunitas
       if (updated.firestoreId != null) {
         if (mounted) setState(() => _savingMessage = 'Sinkronisasi ke komunitas...');
         try {
           await FirestoreService().updateCommunityRecipe(updated.firestoreId!, updated);
-        } catch (_) {
-          // Sync gagal tidak membatalkan save lokal
-        }
+        } catch (_) {}
       }
 
       if (mounted) {
@@ -155,6 +183,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
             _section('Foto Resep'),
             _buildImagePicker(),
             const SizedBox(height: 20),
+
             _section('Informasi Dasar'),
             _field(_titleCtrl, 'Nama Resep *', Icons.restaurant_menu, required: true),
             const SizedBox(height: 12),
@@ -173,17 +202,40 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
             ),
             const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: _field(_timeCtrl, 'Waktu (menit) *', Icons.timer, required: true, numeric: true)),
+              Expanded(child: TextFormField(
+                controller: _prepTimeCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Persiapan (menit)',
+                  prefixIcon: Icon(Icons.hourglass_empty),
+                  hintText: 'Opsional',
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final n = int.tryParse(v.trim());
+                  if (n == null || n < 0) return 'Harus angka ≥ 0';
+                  return null;
+                },
+              )),
               const SizedBox(width: 12),
-              Expanded(child: _field(_servingsCtrl, 'Porsi *', Icons.people, required: true, numeric: true)),
+              Expanded(child: _field(_cookTimeCtrl, 'Masak (menit) *', Icons.timer, required: true, numeric: true)),
             ]),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _difficulty,
-              decoration: const InputDecoration(labelText: 'Kesulitan', prefixIcon: Icon(Icons.bar_chart)),
-              items: AppConstants.difficulties.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-              onChanged: (v) => setState(() => _difficulty = v!),
-            ),
+            Row(children: [
+              Expanded(child: _field(_servingsCtrl, 'Porsi *', Icons.people, required: true, numeric: true)),
+              const SizedBox(width: 12),
+              Expanded(child: DropdownButtonFormField<String>(
+                initialValue: _difficulty,
+                decoration: const InputDecoration(labelText: 'Kesulitan', prefixIcon: Icon(Icons.bar_chart)),
+                items: AppConstants.difficulties.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+                onChanged: (v) => setState(() => _difficulty = v!),
+              )),
+            ]),
+
+            const SizedBox(height: 20),
+            _section('Tags Resep'),
+            _buildTagsSection(),
+
             const SizedBox(height: 20),
             _section('Bahan-bahan'),
             ..._ingredientCtrls.asMap().entries.map((e) => _dynamicField(
@@ -193,14 +245,24 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
                   : null,
             )),
             _addBtn('Tambah Bahan', () => setState(() => _ingredientCtrls.add(TextEditingController()))),
+
             const SizedBox(height: 20),
             _section('Langkah-langkah'),
-            ..._stepCtrls.asMap().entries.map((e) => _stepField(e.key, e.value,
-              onRemove: _stepCtrls.length > 1
-                  ? () => setState(() { _stepCtrls[e.key].dispose(); _stepCtrls.removeAt(e.key); })
-                  : null,
-            )),
+            _buildStepsSection(),
             _addBtn('Tambah Langkah', () => setState(() => _stepCtrls.add(TextEditingController()))),
+
+            const SizedBox(height: 20),
+            _section('Tips Memasak (Opsional)'),
+            TextFormField(
+              controller: _tipsCtrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Tips, variasi, atau catatan tambahan',
+                prefixIcon: Icon(Icons.lightbulb_outline, color: Colors.amber),
+                alignLabelWithHint: true,
+              ),
+            ),
+
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _saving ? null : _save,
@@ -217,6 +279,80 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTagsSection() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: _availableTags.map((tag) {
+        final selected = _selectedTags.contains(tag);
+        return FilterChip(
+          label: Text(tag),
+          selected: selected,
+          onSelected: (sel) => setState(() {
+            if (sel) { _selectedTags.add(tag); } else { _selectedTags.remove(tag); }
+          }),
+          selectedColor: AppTheme.primary.withValues(alpha: 0.15),
+          checkmarkColor: AppTheme.primary,
+          labelStyle: TextStyle(
+            color: selected ? AppTheme.primary : AppTheme.textSubOn(context),
+            fontSize: 13,
+          ),
+          side: BorderSide(
+            color: selected ? AppTheme.primary : Colors.grey.shade300,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildStepsSection() {
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorder: (oldIndex, newIndex) {
+        setState(() {
+          if (newIndex > oldIndex) newIndex--;
+          final ctrl = _stepCtrls.removeAt(oldIndex);
+          _stepCtrls.insert(newIndex, ctrl);
+        });
+      },
+      children: _stepCtrls.asMap().entries.map((e) {
+        final i = e.key;
+        return Padding(
+          key: ValueKey(i),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ReorderableDragStartListener(
+              index: i,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 14, right: 8),
+                child: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: AppTheme.primary,
+                  child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                ),
+              ),
+            ),
+            Expanded(child: TextFormField(
+              controller: e.value,
+              maxLines: 2,
+              decoration: InputDecoration(labelText: 'Langkah ${i + 1}'),
+            )),
+            if (_stepCtrls.length > 1)
+              IconButton(
+                icon: const Icon(Icons.remove_circle, color: Colors.red),
+                onPressed: () => setState(() {
+                  _stepCtrls[i].dispose();
+                  _stepCtrls.removeAt(i);
+                }),
+              ),
+          ]),
+        );
+      }).toList(),
     );
   }
 
@@ -280,26 +416,6 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
             labelText: label,
             prefixIcon: const Icon(Icons.fiber_manual_record, size: 12, color: AppTheme.primary),
           ),
-        )),
-        if (onRemove != null)
-          IconButton(icon: const Icon(Icons.remove_circle, color: Colors.red), onPressed: onRemove),
-      ]),
-    );
-  }
-
-  Widget _stepField(int index, TextEditingController ctrl, {VoidCallback? onRemove}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 16, right: 8),
-          child: CircleAvatar(radius: 14, backgroundColor: AppTheme.primary,
-            child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12))),
-        ),
-        Expanded(child: TextFormField(
-          controller: ctrl,
-          maxLines: 2,
-          decoration: InputDecoration(labelText: 'Langkah ${index + 1}'),
         )),
         if (onRemove != null)
           IconButton(icon: const Icon(Icons.remove_circle, color: Colors.red), onPressed: onRemove),
