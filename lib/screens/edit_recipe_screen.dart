@@ -321,9 +321,10 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
         });
       },
       children: _stepCtrls.asMap().entries.map((e) {
-        final i = e.key;
+        final i    = e.key;
+        final ctrl = e.value;
         return Padding(
-          key: ValueKey(i),
+          key: ObjectKey(ctrl),
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             ReorderableDragStartListener(

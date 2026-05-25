@@ -71,16 +71,21 @@ class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderSt
   }
 
   void _shareRecipe() {
+    final timeStr = _recipe.prepTime > 0
+        ? 'Persiapan: ${_recipe.prepTime} menit | Masak: ${_recipe.cookingTime} menit'
+        : 'Waktu: ${_recipe.cookingTime} menit';
+    final tagsStr = _recipe.tags.isNotEmpty ? '\nTags: ${_recipe.tags.join(', ')}' : '';
+    final tipsStr = _recipe.tips.isNotEmpty ? '\n\nTips: ${_recipe.tips}' : '';
     final text = '''
 Resep: ${_recipe.title}
-Kategori: ${_recipe.category}
-Waktu: ${_recipe.cookingTime} menit | Porsi: ${_recipe.servings}
+Kategori: ${_recipe.category}$tagsStr
+$timeStr | Porsi: ${_recipe.servings}
 
 Bahan-bahan:
 ${_recipe.ingredients.map((i) => '• $i').join('\n')}
 
 Langkah-langkah:
-${_recipe.steps.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n')}
+${_recipe.steps.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n')}$tipsStr
 
 Dibagikan dari aplikasi ResepKu
 ''';

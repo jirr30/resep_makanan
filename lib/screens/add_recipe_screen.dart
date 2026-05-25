@@ -297,7 +297,10 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
             _section('Bahan-bahan'),
             _buildIngredientHint(),
             const SizedBox(height: 8),
-            ..._ingEntries.asMap().entries.map((e) => _buildIngredientRow(e.key, e.value)),
+            ..._ingEntries.asMap().entries.map((e) => KeyedSubtree(
+              key: ObjectKey(e.value),
+              child: _buildIngredientRow(e.key, e.value),
+            )),
             TextButton.icon(
               onPressed: () => setState(() => _ingEntries.add(_IngEntry())),
               icon: const Icon(Icons.add, color: AppTheme.primary),
@@ -400,22 +403,27 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               ),
             ),
           if (!isSecukupnya) const SizedBox(width: 6),
-          // Unit dropdown
+          // Unit dropdown — plain DropdownButton (reactive, no FormField state issues)
           SizedBox(
             width: isSecukupnya ? 110 : 96,
-            child: DropdownButtonFormField<String>(
-              initialValue: entry.unit,
-              isDense: true,
+            child: InputDecorator(
               decoration: const InputDecoration(
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                contentPadding: EdgeInsets.fromLTRB(8, 11, 4, 11),
               ),
-              style: TextStyle(fontSize: 13, color: AppTheme.textOn(context)),
-              items: _units.map((u) => DropdownMenuItem(
-                value: u,
-                child: Text(u, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-              )).toList(),
-              onChanged: (v) => setState(() => entry.unit = v!),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: entry.unit,
+                  isDense: true,
+                  isExpanded: true,
+                  style: TextStyle(fontSize: 13, color: AppTheme.textOn(context)),
+                  items: _units.map((u) => DropdownMenuItem(
+                    value: u,
+                    child: Text(u, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                  )).toList(),
+                  onChanged: (v) => setState(() => entry.unit = v!),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -459,9 +467,10 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
         });
       },
       children: _stepCtrls.asMap().entries.map((e) {
-        final i = e.key;
+        final i    = e.key;
+        final ctrl = e.value;
         return Padding(
-          key: ValueKey(i),
+          key: ObjectKey(ctrl),
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,

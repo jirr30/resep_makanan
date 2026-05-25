@@ -49,6 +49,9 @@ class FirestoreService {
       'protein':     recipe.protein,
       'carbs':       recipe.carbs,
       'fat':         recipe.fat,
+      'prepTime':    recipe.prepTime,
+      'tags':        recipe.tags,
+      'tips':        recipe.tips,
       'authorId':    user.uid,
       'authorName':  user.displayName ?? 'Anonim',
       'authorPhoto': user.photoURL ?? '',
@@ -363,6 +366,9 @@ class FirestoreService {
       'protein':     recipe.protein,
       'carbs':       recipe.carbs,
       'fat':         recipe.fat,
+      'prepTime':    recipe.prepTime,
+      'tags':        recipe.tags,
+      'tips':        recipe.tips,
       'updatedAt':   FieldValue.serverTimestamp(),
     });
   }
@@ -758,6 +764,9 @@ class CommunityRecipe {
   final int            likes;
   final int            commentCount;
   final int            viewCount;
+  final int            prepTime;
+  final List<String>   tags;
+  final String         tips;
 
   const CommunityRecipe({
     required this.id,
@@ -783,6 +792,9 @@ class CommunityRecipe {
     required this.likes,
     this.commentCount = 0,
     this.viewCount = 0,
+    this.prepTime = 0,
+    this.tags = const [],
+    this.tips = '',
   });
 
   factory CommunityRecipe.fromFirestore(DocumentSnapshot doc) {
@@ -813,6 +825,9 @@ class CommunityRecipe {
       likes:        d['likes']        as int? ?? 0,
       commentCount: d['commentCount'] as int? ?? 0,
       viewCount:    d['viewCount']    as int? ?? 0,
+      prepTime:     (d['prepTime']    as int?) ?? 0,
+      tags:         List<String>.from(d['tags'] ?? []),
+      tips:         (d['tips']        as String?) ?? '',
     );
   }
 
@@ -833,5 +848,8 @@ class CommunityRecipe {
     protein:     protein,
     carbs:       carbs,
     fat:         fat,
+    prepTime:    prepTime,
+    tags:        tags,
+    tips:        tips,
   );
 }

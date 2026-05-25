@@ -156,8 +156,8 @@ class DatabaseService {
     try {
       final db = await database;
       final maps = await db.query('recipes',
-        where: 'title LIKE ? OR category LIKE ? OR description LIKE ? OR ingredients LIKE ?',
-        whereArgs: ['%$query%', '%$query%', '%$query%', '%$query%']);
+        where: 'title LIKE ? OR category LIKE ? OR description LIKE ? OR ingredients LIKE ? OR tags LIKE ?',
+        whereArgs: ['%$query%', '%$query%', '%$query%', '%$query%', '%$query%']);
       return maps.map(Recipe.fromMap).toList();
     } catch (_) { return []; }
   }
