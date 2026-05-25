@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/recipe.dart';
@@ -84,6 +86,142 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _showEditProfile(User user) async {
+    final nameCtrl = TextEditingController(text: user.displayName ?? '');
+    File? pickedPhoto;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                      color: AppTheme.borderOn(ctx),
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Center(
+                child: GestureDetector(
+                  onTap: () async {
+                    final picker = ImagePicker();
+                    final picked = await picker.pickImage(
+                        source: ImageSource.gallery, imageQuality: 70);
+                    if (picked != null) {
+                      setModal(() => pickedPhoto = File(picked.path));
+                    }
+                  },
+                  child: Stack(children: [
+                    CircleAvatar(
+                      radius: 48,
+                      backgroundColor: AppTheme.primary,
+                      backgroundImage: pickedPhoto != null
+                          ? FileImage(pickedPhoto!) as ImageProvider
+                          : (user.photoURL != null
+                              ? NetworkImage(user.photoURL!)
+                              : null),
+                      child: (pickedPhoto == null && user.photoURL == null)
+                          ? const Icon(Icons.person, size: 48, color: Colors.white)
+                          : null,
+                    ),
+                    Positioned(
+                      right: 0, bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                            color: AppTheme.primary, shape: BoxShape.circle),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text('Ketuk foto untuk menggantinya',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSubOn(ctx))),
+              ),
+              const SizedBox(height: 20),
+              Text('Nama Tampilan', style: Theme.of(ctx).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  hintText: 'Nama kamu',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                textCapitalization: TextCapitalization.words,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _saveProfile(nameCtrl.text.trim(), pickedPhoto);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text('Simpan',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    nameCtrl.dispose();
+  }
+
+  Future<void> _saveProfile(String name, File? photo) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      String? photoUrl;
+      if (photo != null) {
+        final ext = photo.path.split('.').last;
+        final ref = FirebaseStorage.instance
+            .ref('profile_images/${user.uid}/${DateTime.now().millisecondsSinceEpoch}.$ext');
+        final task = await ref.putFile(photo);
+        photoUrl = await task.ref.getDownloadURL();
+      }
+      if (name.isNotEmpty && name != user.displayName) {
+        await user.updateDisplayName(name);
+      }
+      if (photoUrl != null) {
+        await user.updatePhotoURL(photoUrl);
+      }
+      await user.reload();
+      await _fs.syncCurrentUserProfile();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Profil berhasil diperbarui!'),
+          backgroundColor: AppTheme.primary,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memperbarui profil: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
@@ -95,6 +233,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         appBar: AppBar(
           title: const Text('Profil Saya'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit Profil',
+              onPressed: () => _showEditProfile(user),
+            ),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.red),
               tooltip: 'Keluar',

@@ -5,6 +5,7 @@ import '../services/database_service.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
 import 'detail_screen.dart';
+import 'shopping_list_screen.dart';
 
 class MealPlannerScreen extends StatefulWidget {
   const MealPlannerScreen({super.key});
@@ -67,6 +68,58 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
   void _previousWeek() { _weekStart = _weekStart.subtract(const Duration(days: 7)); _load(); }
   void _nextWeek()     { _weekStart = _weekStart.add(const Duration(days: 7)); _load(); }
 
+  Future<void> _generateShoppingList() async {
+    final recipeIds = <int>{};
+    for (final dayPlans in _plans.values) {
+      for (final plan in dayPlans) {
+        final id = plan['recipeId'];
+        if (id != null) recipeIds.add(id as int);
+      }
+    }
+    if (recipeIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak ada resep di rencana minggu ini')),
+      );
+      return;
+    }
+    final recipes = _allRecipes.where((r) => recipeIds.contains(r.id)).toList();
+    final totalBahan = recipes.fold(0, (sum, r) => sum + r.ingredients.length);
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Generate Daftar Belanja'),
+        content: Text(
+          'Tambahkan $totalBahan bahan dari ${recipes.length} resep minggu ini ke daftar belanja?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
+            child: const Text('Tambahkan'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    for (final recipe in recipes) {
+      await _db.addIngredientsToShoppingList(recipe);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('$totalBahan bahan ditambahkan ke daftar belanja!'),
+      backgroundColor: AppTheme.primary,
+      action: SnackBarAction(
+        label: 'Lihat',
+        textColor: Colors.amber,
+        onPressed: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const ShoppingListScreen())),
+      ),
+    ));
+  }
+
   Future<void> _addMeal(String date, String mealType) async {
     if (_allRecipes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Belum ada resep tersimpan')));
@@ -122,6 +175,11 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
       appBar: AppBar(
         title: const Text('Meal Planner'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.shopping_cart_outlined),
+            tooltip: 'Generate daftar belanja dari rencana minggu ini',
+            onPressed: _generateShoppingList,
+          ),
           IconButton(icon: const Icon(Icons.today), tooltip: 'Minggu ini',
             onPressed: () { _weekStart = _getMonday(DateTime.now()); _load(); }),
         ],

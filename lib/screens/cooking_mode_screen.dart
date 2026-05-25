@@ -23,6 +23,11 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
   late PageController _pageCtrl;
   final _notif = NotificationService();
 
+  // Per-step timer
+  int? _stepRemaining;
+  bool _stepTimerRunning = false;
+  Timer? _stepTimer;
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +40,7 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _stepTimer?.cancel();
     _pageCtrl.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -65,6 +71,118 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
       _remaining = widget.recipe.cookingTime * 60;
       _timerRunning = false;
     });
+  }
+
+  // ── Per-step timer ─────────────────────────────────────────────────────────
+
+  int? _parseStepSeconds(String step) {
+    final re = RegExp(r'(\d+)\s*(jam|menit|detik)', caseSensitive: false);
+    final m = re.firstMatch(step);
+    if (m == null) return null;
+    final val = int.parse(m.group(1)!);
+    return switch (m.group(2)!.toLowerCase()) {
+      'jam'   => val * 3600,
+      'menit' => val * 60,
+      _       => val,
+    };
+  }
+
+  void _startStepTimer(int seconds) {
+    _stepTimer?.cancel();
+    setState(() { _stepRemaining = seconds; _stepTimerRunning = true; });
+    _stepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if ((_stepRemaining ?? 0) <= 0) {
+        _stepTimer?.cancel();
+        _notif.showTimerDone(widget.recipe.title);
+        if (mounted) setState(() => _stepTimerRunning = false);
+      } else {
+        if (mounted) setState(() => _stepRemaining = _stepRemaining! - 1);
+      }
+    });
+  }
+
+  void _cancelStepTimer() {
+    _stepTimer?.cancel();
+    setState(() { _stepRemaining = null; _stepTimerRunning = false; });
+  }
+
+  void _resetStepState() {
+    _stepTimer?.cancel();
+    _stepRemaining = null;
+    _stepTimerRunning = false;
+  }
+
+  String _formatStepTime(int secs) {
+    if (secs >= 3600) {
+      final h = secs ~/ 3600;
+      final m = (secs % 3600) ~/ 60;
+      return m > 0 ? '${h}j ${m}m' : '$h jam';
+    }
+    if (secs >= 60) return '${secs ~/ 60} menit';
+    return '$secs detik';
+  }
+
+  Widget _buildStepTimerChip(String stepText) {
+    final secs = _parseStepSeconds(stepText);
+    if (secs == null) return const SizedBox.shrink();
+
+    final isDone = _stepRemaining == 0 && !_stepTimerRunning;
+    if (_stepTimerRunning || (_stepRemaining != null && !isDone)) {
+      return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        GestureDetector(
+          onTap: _cancelStepTimer,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.timer, color: Colors.white, size: 18),
+              const SizedBox(width: 6),
+              Text(_formatTime(_stepRemaining ?? 0),
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(width: 8),
+              const Icon(Icons.close, color: Colors.white70, size: 16),
+            ]),
+          ),
+        ),
+      ]);
+    }
+    if (isDone) {
+      return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+              color: Colors.green, borderRadius: BorderRadius.circular(20)),
+          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            SizedBox(width: 6),
+            Text('Timer Selesai!',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          ]),
+        ),
+      ]);
+    }
+    return GestureDetector(
+      onTap: () => _startStepTimer(secs),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white30),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.timer_outlined, color: Colors.white70, size: 18),
+          const SizedBox(width: 6),
+          Text('Timer ${_formatStepTime(secs)}',
+              style: const TextStyle(color: Colors.white70, fontSize: 15)),
+        ]),
+      ),
+    );
   }
 
   String _formatTime(int secs) {
@@ -188,6 +306,10 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.white, fontSize: 22, height: 1.7),
                         ),
+                        if (i == _step) ...[
+                          const SizedBox(height: 20),
+                          _buildStepTimerChip(steps[i]),
+                        ],
                       ],
                     ),
                   ),
@@ -225,6 +347,7 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                 child: Row(children: [
                   Expanded(child: OutlinedButton.icon(
                     onPressed: isFirst ? null : () {
+                      _resetStepState();
                       setState(() => _step--);
                       _pageCtrl.animateToPage(_step,
                           duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
@@ -245,6 +368,7 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                             if (context.mounted) Navigator.of(context).pop();
                           }
                         : () {
+                            _resetStepState();
                             setState(() => _step++);
                             _pageCtrl.animateToPage(_step,
                                 duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);

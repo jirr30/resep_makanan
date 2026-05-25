@@ -12,6 +12,7 @@ import 'auth_gate_screen.dart';
 import 'collections_screen.dart';
 import 'edit_recipe_screen.dart';
 import 'profile_screen.dart';
+import 'shopping_list_screen.dart';
 import 'user_profile_screen.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
@@ -805,6 +806,22 @@ https://play.google.com/store/apps/details?id=com.resepin.resep_makanan''';
     );
   }
 
+  Future<void> _addToShoppingList() async {
+    if (widget.recipe.ingredients.isEmpty) return;
+    await _db.addStringListToShoppingList(widget.recipe.ingredients);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${widget.recipe.ingredients.length} bahan ditambahkan ke daftar belanja!'),
+      backgroundColor: AppTheme.primary,
+      action: SnackBarAction(
+        label: 'Lihat',
+        textColor: Colors.amber,
+        onPressed: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const ShoppingListScreen())),
+      ),
+    ));
+  }
+
   Widget _buildBottomBar() {
     if (_isOwner) {
       return SafeArea(
@@ -854,6 +871,18 @@ https://play.google.com/store/apps/details?id=com.resepin.resep_makanan''';
               icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border,
                   color: _isLiked ? Colors.red : AppTheme.primary),
               onPressed: _likeLoading ? null : _toggleLike,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: AppTheme.primary.withValues(alpha: 0.4)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.shopping_cart_outlined, color: AppTheme.primary),
+              tooltip: 'Tambah bahan ke daftar belanja',
+              onPressed: _addToShoppingList,
             ),
           ),
           const SizedBox(width: 8),

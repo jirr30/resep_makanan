@@ -262,6 +262,20 @@ class DatabaseService {
     await batch.commit(noResult: true);
   }
 
+  Future<void> addStringListToShoppingList(List<String> ingredients) async {
+    final db = await database;
+    final batch = db.batch();
+    final now = DateTime.now().toIso8601String();
+    for (final ingredient in ingredients) {
+      if (ingredient.trim().isEmpty) continue;
+      batch.insert('shopping_list', {
+        'name': ingredient.trim(), 'quantity': null, 'isChecked': 0,
+        'recipeId': null, 'createdAt': now,
+      });
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<void> toggleShoppingItem(int id, bool isChecked) async {
     final db = await database;
     await db.update('shopping_list', {'isChecked': isChecked ? 1 : 0}, where: 'id = ?', whereArgs: [id]);

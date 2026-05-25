@@ -16,7 +16,7 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
 
   AuthProvider() {
-    _authSub = FirebaseAuth.instance.authStateChanges().listen((u) {
+    _authSub = FirebaseAuth.instance.userChanges().listen((u) {
       _user = u;
       notifyListeners();
     });
