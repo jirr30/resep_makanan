@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,6 +12,53 @@ class FirestoreService {
   CollectionReference get _recipes => _db.collection('community_recipes');
   CollectionReference get _users   => _db.collection('users');
   CollectionReference get _follows => _db.collection('follows');
+
+  // ─── Popularity Score Engine ─────────────────────────────────────────────────
+
+  /// Pure function — no I/O. Safe to call from transactions.
+  static double _computePopularityScore({
+    required int    likes,
+    required int    viewCount,
+    required int    commentCount,
+    required double averageRating,
+    required int    ratingCount,
+    required DateTime publishedAt,
+  }) {
+    // Bayesian average: smooths low-vote outliers.
+    // Prior = 5 votes at global avg 3.5 — a recipe with 1 × 5★ scores ≈ 3.9, not 5.0.
+    const double prior     = 5.0;
+    const double globalAvg = 3.5;
+    final double bayesian  =
+        (prior * globalAvg + ratingCount * averageRating) / (prior + ratingCount);
+
+    // Freshness decay: half-weight after 60 days, asymptotically approaches 0.
+    final double ageDays  = DateTime.now().difference(publishedAt).inDays.toDouble();
+    final double freshness = 1.0 / (1.0 + ageDays / 60.0);
+
+    // Engagement: weighted by signal quality (like > comment > view).
+    final double engagement = (likes * 3.0) + (commentCount * 2.0) + (viewCount * 0.2);
+
+    // Final: engagement × quality × recency blend.
+    return engagement * bayesian * (0.5 + 0.5 * freshness);
+  }
+
+  /// Read current doc, recompute score, write back. Fire-and-forget safe.
+  Future<void> _recalculateScore(String docId) async {
+    try {
+      final doc = await _recipes.doc(docId).get();
+      if (!doc.exists) return;
+      final d     = doc.data() as Map<String, dynamic>;
+      final score = _computePopularityScore(
+        likes:         (d['likes']         as int?)    ?? 0,
+        viewCount:     (d['viewCount']     as int?)    ?? 0,
+        commentCount:  (d['commentCount']  as int?)    ?? 0,
+        averageRating: (d['averageRating'] as num?)?.toDouble() ?? 0.0,
+        ratingCount:   (d['ratingCount']   as int?)    ?? 0,
+        publishedAt:   (d['publishedAt']   as Timestamp?)?.toDate() ?? DateTime.now(),
+      );
+      await _recipes.doc(docId).update({'popularityScore': score});
+    } catch (_) {} // best-effort — never block the caller
+  }
 
   // ─── Image Upload ────────────────────────────────────────────────────────────
 
@@ -55,12 +103,13 @@ class FirestoreService {
       'authorId':    user.uid,
       'authorName':  user.displayName ?? 'Anonim',
       'authorPhoto': user.photoURL ?? '',
-      'publishedAt': FieldValue.serverTimestamp(),
-      'likes':         0,
-      'averageRating': 0.0,
-      'ratingCount':   0,
-      'commentCount':  0,
-      'viewCount':     0,
+      'publishedAt':     FieldValue.serverTimestamp(),
+      'likes':           0,
+      'averageRating':   0.0,
+      'ratingCount':     0,
+      'commentCount':    0,
+      'viewCount':       0,
+      'popularityScore': 0.0,
     });
     return ref.id;
   }
@@ -103,8 +152,19 @@ class FirestoreService {
     return snap.docs.map(CommunityRecipe.fromFirestore).toList();
   }
 
-  // Top N resep terpopuler berdasarkan likes — untuk dashboard
+  // Top N resep terpopuler — composite score (likes + views + rating + freshness).
+  // Falls back to likes-only order during migration (docs tanpa popularityScore).
   Future<List<CommunityRecipe>> getTrendingRecipes({int limit = 5}) async {
+    try {
+      final snap = await _recipes
+          .orderBy('popularityScore', descending: true)
+          .limit(limit)
+          .get();
+      if (snap.docs.isNotEmpty) {
+        return snap.docs.map(CommunityRecipe.fromFirestore).toList();
+      }
+    } catch (_) {}
+    // Fallback: dokumen lama belum punya popularityScore field
     final snap = await _recipes
         .orderBy('likes', descending: true)
         .limit(limit)
@@ -157,6 +217,7 @@ class FirestoreService {
     if (_viewedThisSession.contains(docId)) return;
     _viewedThisSession.add(docId);
     await _recipes.doc(docId).update({'viewCount': FieldValue.increment(1)});
+    unawaited(_recalculateScore(docId));
   }
 
   // ─── Like ─────────────────────────────────────────────────────────────────────
@@ -188,6 +249,8 @@ class FirestoreService {
         userRef.set({'likedRecipeIds': FieldValue.arrayRemove([docId])}, SetOptions(merge: true)),
       ]);
     }
+    // Recalculate score after likes change — fire-and-forget, doesn't block UI
+    unawaited(_recalculateScore(docId));
   }
 
   Future<bool> isLiked(String docId) async {
@@ -258,8 +321,22 @@ class FirestoreService {
             : ((currentAvg * currentCount) - oldRating + newRating) / newCount;
       }
 
+      // Compute new popularity score atomically with the rating update
+      final newScore = _computePopularityScore(
+        likes:         (recipeData?['likes']        as int?)    ?? 0,
+        viewCount:     (recipeData?['viewCount']    as int?)    ?? 0,
+        commentCount:  (recipeData?['commentCount'] as int?)    ?? 0,
+        averageRating: newAvg,
+        ratingCount:   newCount,
+        publishedAt:   (recipeData?['publishedAt']  as Timestamp?)?.toDate() ?? DateTime.now(),
+      );
+
       tx.set(ratingRef, {'rating': newRating, 'updatedAt': FieldValue.serverTimestamp()});
-      tx.update(recipeRef, {'averageRating': newAvg, 'ratingCount': newCount});
+      tx.update(recipeRef, {
+        'averageRating':   newAvg,
+        'ratingCount':     newCount,
+        'popularityScore': newScore,
+      });
     });
   }
 
@@ -294,6 +371,7 @@ class FirestoreService {
       'commentCount': FieldValue.increment(1),
     });
     await batch.commit();
+    unawaited(_recalculateScore(recipeId));
 
     if (recipeOwnerId != null) {
       await _writeNotification(
@@ -313,6 +391,7 @@ class FirestoreService {
       'commentCount': FieldValue.increment(-1),
     });
     await batch.commit();
+    unawaited(_recalculateScore(recipeId));
   }
 
   // ─── My Recipes / Delete ──────────────────────────────────────────────────────
@@ -767,6 +846,7 @@ class CommunityRecipe {
   final int            prepTime;
   final List<String>   tags;
   final String         tips;
+  final double         popularityScore;
 
   const CommunityRecipe({
     required this.id,
@@ -795,6 +875,7 @@ class CommunityRecipe {
     this.prepTime = 0,
     this.tags = const [],
     this.tips = '',
+    this.popularityScore = 0.0,
   });
 
   factory CommunityRecipe.fromFirestore(DocumentSnapshot doc) {
@@ -825,9 +906,10 @@ class CommunityRecipe {
       likes:        d['likes']        as int? ?? 0,
       commentCount: d['commentCount'] as int? ?? 0,
       viewCount:    d['viewCount']    as int? ?? 0,
-      prepTime:     (d['prepTime']    as int?) ?? 0,
-      tags:         List<String>.from(d['tags'] ?? []),
-      tips:         (d['tips']        as String?) ?? '',
+      prepTime:        (d['prepTime']        as int?) ?? 0,
+      tags:            List<String>.from(d['tags'] ?? []),
+      tips:            (d['tips']            as String?) ?? '',
+      popularityScore: (d['popularityScore'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
