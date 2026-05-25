@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/recipe.dart';
 import '../services/notification_service.dart';
+import '../services/rating_service.dart';
 import '../utils/app_theme.dart';
 
 class CookingModeScreen extends StatefulWidget {
@@ -239,7 +240,10 @@ class _CookingModeScreenState extends State<CookingModeScreen> {
                   const SizedBox(width: 16),
                   Expanded(child: ElevatedButton.icon(
                     onPressed: isLast
-                        ? () => Navigator.of(context).pop()
+                        ? () async {
+                            await RatingService.triggerAfterPositiveAction(context);
+                            if (context.mounted) Navigator.of(context).pop();
+                          }
                         : () {
                             setState(() => _step++);
                             _pageCtrl.animateToPage(_step,

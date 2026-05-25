@@ -8,6 +8,7 @@ import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../services/nutrition_service.dart';
+import '../services/rating_service.dart';
 import '../utils/app_theme.dart';
 import 'collections_screen.dart';
 import 'edit_recipe_screen.dart';
@@ -149,6 +150,7 @@ Dibagikan dari aplikasi ResepKu
         content: Text('Resep berhasil dibagikan ke komunitas!'),
         backgroundColor: AppTheme.primary,
       ));
+      await RatingService.triggerAfterPositiveAction(context);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

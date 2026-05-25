@@ -3,15 +3,14 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
 import 'services/firestore_service.dart';
 import 'services/notification_service.dart';
+import 'services/rating_service.dart';
 import 'utils/app_theme.dart';
 
 void main() async {
@@ -33,7 +32,7 @@ void main() async {
     FirestoreService().saveFcmToken(token);
   }
 
-  await _maybeRequestReview();
+  await RatingService.incrementLaunchCount();
   runApp(
     MultiProvider(
       providers: [
@@ -43,19 +42,6 @@ void main() async {
       child: const ResepMakananApp(),
     ),
   );
-}
-
-Future<void> _maybeRequestReview() async {
-  final prefs  = await SharedPreferences.getInstance();
-  final opens  = prefs.getInt('open_count') ?? 0;
-  final shown  = prefs.getBool('review_shown') ?? false;
-  if (opens >= 5 && !shown) {
-    await prefs.setBool('review_shown', true);
-    final review = InAppReview.instance;
-    if (await review.isAvailable()) {
-      await review.requestReview();
-    }
-  }
 }
 
 class ResepMakananApp extends StatelessWidget {

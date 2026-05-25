@@ -8,6 +8,7 @@ import '../models/recipe.dart';
 import '../services/database_service.dart';
 import '../services/firestore_service.dart';
 import '../services/nutrition_service.dart';
+import '../services/rating_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/constants.dart';
 
@@ -123,7 +124,8 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg), backgroundColor: AppTheme.primary),
         );
-        Navigator.pop(context);
+        await RatingService.triggerAfterPositiveAction(context);
+        if (mounted) Navigator.pop(context);
       }
     } catch (_) {
       if (mounted) {
