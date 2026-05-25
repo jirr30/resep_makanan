@@ -150,14 +150,15 @@ jobs:
           sed -i 's/^[[:space:]]*//' android/key.properties
 
       # Hitung version code dari build number
-      - name: Set version dari tag
+      - name: Set version dari tag atau pubspec.yaml
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION_NAME="${{ github.ref_name }}"
             VERSION_NAME="${VERSION_NAME#v}"
           else
-            VERSION_NAME="1.0.0"
+            # Fallback: baca dari pubspec.yaml agar selalu sinkron
+            VERSION_NAME=$(grep '^version:' pubspec.yaml | sed 's/version: //; s/+.*//')
           fi
           BUILD_NUMBER="${{ github.run_number }}"
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
