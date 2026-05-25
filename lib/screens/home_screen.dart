@@ -1363,7 +1363,7 @@ class _AppDrawer extends StatelessWidget {
                     onTap: () => _go(context, const CommunityScreen())),
                 _DrawerItem(
                     icon: Icons.calendar_month_outlined,
-                    label: 'Meal Planner',
+                    label: 'Jadwal Makan',
                     onTap: () =>
                         _go(context, const MealPlannerScreen())),
                 _DrawerItem(

@@ -173,7 +173,7 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Meal Planner'),
+        title: const Text('Jadwal Makan'),
         actions: [
           IconButton(
             icon: const Icon(Icons.shopping_cart_outlined),

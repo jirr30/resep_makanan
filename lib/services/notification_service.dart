@@ -142,7 +142,7 @@ class NotificationService {
         scheduled,
         _buildDetails(
           channelId: _mealChannel,
-          channelName: 'Meal Planner',
+          channelName: 'Jadwal Makan',
           channelDesc: 'Pengingat jadwal makan harian',
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
