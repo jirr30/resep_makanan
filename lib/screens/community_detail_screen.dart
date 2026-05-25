@@ -889,7 +889,7 @@ https://play.google.com/store/apps/details?id=com.resepin.resep_makanan''';
                       ? 'Tersimpan'
                       : 'Simpan ke Koleksi'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _isSaved ? Colors.grey[400] : AppTheme.primary,
+                backgroundColor: _isSaved ? Colors.grey[600] : AppTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
