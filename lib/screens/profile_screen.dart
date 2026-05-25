@@ -678,11 +678,6 @@ class _PrivateRecipeCard extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 12,
                           color: AppTheme.textSubOn(context))),
-                  if (recipe.isFavorite) ...[
-                    const SizedBox(width: 8),
-                    const Icon(Icons.favorite,
-                        size: 13, color: Colors.red),
-                  ],
                 ]),
                 const SizedBox(height: 4),
                 Row(children: [

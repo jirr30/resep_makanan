@@ -6,13 +6,11 @@ import '../utils/app_theme.dart';
 class RecipeCard extends StatelessWidget {
   final Recipe recipe;
   final VoidCallback onTap;
-  final VoidCallback onFavorite;
 
   const RecipeCard({
     super.key,
     required this.recipe,
     required this.onTap,
-    required this.onFavorite,
   });
 
   @override
@@ -30,26 +28,6 @@ class RecipeCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                   child: _buildImage(recipe, context),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: GestureDetector(
-                    onTap: onFavorite,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                      ),
-                      child: Icon(
-                        recipe.isFavorite ? Icons.favorite : Icons.favorite_border,
-                        color: recipe.isFavorite ? Colors.red : Colors.grey,
-                        size: 20,
-                      ),
-                    ),
-                  ),
                 ),
                 Positioned(
                   bottom: 8,

@@ -60,12 +60,6 @@ class _DetailScreenState extends State<DetailScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
-  Future<void> _toggleFavorite() async {
-    await _db.toggleFavorite(_recipe.id!, !_recipe.isFavorite);
-    if (!mounted) return;
-    setState(() => _recipe = _recipe.copyWith(isFavorite: !_recipe.isFavorite));
-  }
-
   Future<void> _rateRecipe(double rating) async {
     await _db.updateUserRating(_recipe.id!, rating);
     if (!mounted) return;
@@ -267,11 +261,6 @@ Dibagikan dari aplikasi ResepKu
             forceElevated: innerBoxIsScrolled,
             backgroundColor: AppTheme.primary,
             actions: [
-              IconButton(
-                icon: Icon(_recipe.isFavorite ? Icons.favorite : Icons.favorite_border),
-                onPressed: _toggleFavorite,
-                tooltip: _recipe.isFavorite ? 'Hapus favorit' : 'Tambah favorit',
-              ),
               IconButton(icon: const Icon(Icons.share), onPressed: _shareRecipe, tooltip: 'Bagikan'),
               IconButton(
                 icon: const Icon(Icons.collections_bookmark_outlined),

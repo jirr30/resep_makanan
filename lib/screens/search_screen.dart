@@ -108,11 +108,6 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_ctrl.text.trim().isNotEmpty) _search(_ctrl.text);
   }
 
-  Future<void> _toggleFavorite(Recipe recipe) async {
-    await _db.toggleFavorite(recipe.id!, !recipe.isFavorite);
-    _search(_ctrl.text);
-  }
-
   @override
   void dispose() {
     _ctrl.dispose();
@@ -203,7 +198,6 @@ class _SearchScreenState extends State<SearchScreen> {
               onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => DetailScreen(recipe: _localResults[i])),
               ).then((_) => _search(_ctrl.text)),
-              onFavorite: () => _toggleFavorite(_localResults[i]),
             ),
           ),
         ),

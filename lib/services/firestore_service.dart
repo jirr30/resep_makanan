@@ -162,9 +162,13 @@ class FirestoreService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final likesRef = _recipes.doc(docId).collection('likes').doc(user.uid);
+    final userRef  = _users.doc(user.uid);
     if (liked) {
-      await likesRef.set({'likedAt': FieldValue.serverTimestamp()});
-      await _recipes.doc(docId).update({'likes': FieldValue.increment(1)});
+      await Future.wait([
+        likesRef.set({'likedAt': FieldValue.serverTimestamp()}),
+        _recipes.doc(docId).update({'likes': FieldValue.increment(1)}),
+        userRef.set({'likedRecipeIds': FieldValue.arrayUnion([docId])}, SetOptions(merge: true)),
+      ]);
       if (recipeOwnerId != null) {
         await _writeNotification(
           recipeOwnerId,
@@ -175,8 +179,11 @@ class FirestoreService {
         );
       }
     } else {
-      await likesRef.delete();
-      await _recipes.doc(docId).update({'likes': FieldValue.increment(-1)});
+      await Future.wait([
+        likesRef.delete(),
+        _recipes.doc(docId).update({'likes': FieldValue.increment(-1)}),
+        userRef.set({'likedRecipeIds': FieldValue.arrayRemove([docId])}, SetOptions(merge: true)),
+      ]);
     }
   }
 
@@ -185,6 +192,26 @@ class FirestoreService {
     if (user == null) return false;
     final doc = await _recipes.doc(docId).collection('likes').doc(user.uid).get();
     return doc.exists;
+  }
+
+  /// Fetch all community recipes that the current user has liked.
+  Future<List<CommunityRecipe>> getUserLikedRecipes() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return [];
+    final userDoc = await _users.doc(user.uid).get();
+    if (!userDoc.exists) return [];
+    final data     = userDoc.data() as Map<String, dynamic>? ?? {};
+    final likedIds = List<String>.from(data['likedRecipeIds'] ?? []);
+    if (likedIds.isEmpty) return [];
+
+    // Firestore 'whereIn' supports max 30 items per query
+    final results = <CommunityRecipe>[];
+    for (var i = 0; i < likedIds.length; i += 30) {
+      final chunk = likedIds.sublist(i, (i + 30).clamp(0, likedIds.length));
+      final snap  = await _recipes.where(FieldPath.documentId, whereIn: chunk).get();
+      results.addAll(snap.docs.map(CommunityRecipe.fromFirestore));
+    }
+    return results;
   }
 
   // ─── Rating ───────────────────────────────────────────────────────────────────
