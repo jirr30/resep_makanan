@@ -12,15 +12,34 @@ class BackupService {
 
   final _db = DatabaseService();
 
+  // ── Export ────────────────────────────────────────────────────────────────────
+
   Future<String> exportBackup() async {
-    final data = await _db.exportAllData();
-    final json = jsonEncode({'version': 3, 'exportedAt': DateTime.now().toIso8601String(), 'recipes': data});
+    final rawData = await _db.exportAllData();
+
+    // Sanitize: hapus field device-specific dan deprecated sebelum export
+    final cleaned = rawData.map((row) {
+      final m = Map<String, dynamic>.from(row);
+      m.remove('id');          // SQLite auto-increment, tidak relevan di device lain
+      m.remove('imagePath');   // path lokal device, tidak valid di device lain
+      m.remove('isFavorite');  // fitur deprecated
+      return m;
+    }).toList();
+
+    final json = jsonEncode({
+      'version':    4,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'recipes':    cleaned,
+    });
+
     final dir  = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/resepku_backup_${DateTime.now().millisecondsSinceEpoch}.json');
     await file.writeAsString(json);
     await Share.shareXFiles([XFile(file.path)], subject: 'Backup ResepKu');
     return file.path;
   }
+
+  // ── Import ────────────────────────────────────────────────────────────────────
 
   Future<int> importBackup() async {
     final result = await FilePicker.platform.pickFiles(
@@ -33,15 +52,49 @@ class BackupService {
 
     final content = await File(path).readAsString();
     final dynamic decoded = jsonDecode(content);
+
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Format backup tidak valid');
+      throw const FormatException('Format file tidak valid');
     }
     final dynamic rawList = decoded['recipes'];
     if (rawList is! List) {
-      throw const FormatException('Format backup tidak valid: recipes tidak ditemukan');
+      throw const FormatException('File backup tidak mengandung data resep');
     }
-    final recipes = rawList.whereType<Map<String, dynamic>>().toList();
-    await _db.importRecipes(recipes);
-    return recipes.length;
+
+    // Validasi tiap record sebelum import — tolak yang tidak valid
+    final valid = rawList
+        .whereType<Map<String, dynamic>>()
+        .where(_isValidRecipe)
+        .toList();
+
+    if (valid.isEmpty) {
+      throw const FormatException('Tidak ada resep valid dalam file backup');
+    }
+
+    await _db.importRecipes(valid);
+    return valid.length;
+  }
+
+  // ── Validation ────────────────────────────────────────────────────────────────
+
+  bool _isValidRecipe(Map<String, dynamic> r) {
+    // Field string wajib tidak boleh kosong
+    for (final key in ['title', 'category', 'description', 'difficulty']) {
+      final v = r[key];
+      if (v is! String || v.trim().isEmpty) return false;
+    }
+    // imageUrl wajib ada (boleh string kosong — akan pakai placeholder)
+    if (r['imageUrl'] is! String) return false;
+    // ingredients & steps disimpan sebagai string '||'-joined, wajib tidak kosong
+    for (final key in ['ingredients', 'steps']) {
+      final v = r[key];
+      if (v is! String || v.trim().isEmpty) return false;
+    }
+    // Field numerik wajib positif
+    final cookingTime = r['cookingTime'];
+    if (cookingTime is! int || cookingTime <= 0) return false;
+    final servings = r['servings'];
+    if (servings is! int || servings <= 0) return false;
+    return true;
   }
 }

@@ -60,6 +60,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _doImport() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Import Backup'),
+        content: const Text(
+          'Resep dari file backup akan ditambahkan ke koleksi privat kamu.\n\n'
+          'Resep yang sudah ada tidak akan ditimpa.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     setState(() => _loadingBackup = true);
     try {
       final count = await _backup.importBackup();
@@ -115,14 +137,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ListTile(
                     leading: const Icon(Icons.upload, color: AppTheme.primary),
                     title: const Text('Ekspor Backup'),
-                    subtitle: const Text('Simpan semua resep ke file JSON'),
+                    subtitle: const Text('Ekspor resep privat ke file JSON'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _doExport,
                   ),
                   ListTile(
                     leading: const Icon(Icons.download, color: AppTheme.primary),
                     title: const Text('Import Backup'),
-                    subtitle: const Text('Pulihkan resep dari file backup'),
+                    subtitle: const Text('Tambah resep dari file backup (.json)'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _doImport,
                   ),
