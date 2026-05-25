@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/firestore_service.dart';
+import '../utils/app_theme.dart';
 import '../widgets/shimmer_card.dart';
 import '../widgets/error_view.dart';
 import 'community_detail_screen.dart';
@@ -190,8 +191,10 @@ class _LikedCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() => Container(
-    color: Colors.grey.shade200,
-    child: const Icon(Icons.restaurant, color: Colors.grey, size: 36),
+  Widget _placeholder() => Builder(
+    builder: (context) => Container(
+      color: AppTheme.surfaceOn(context),
+      child: Icon(Icons.restaurant, color: AppTheme.textSubOn(context), size: 36),
+    ),
   );
 }

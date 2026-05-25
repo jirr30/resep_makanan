@@ -102,6 +102,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
           bottom: const TabBar(
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white60,
+            indicatorColor: Colors.white,
+            dividerColor: Colors.transparent,
             tabs: [
               Tab(text: 'Dipublikasikan'),
               Tab(text: 'Privat'),
@@ -691,7 +695,7 @@ class _PrivateRecipeCard extends StatelessWidget {
                 ]),
               ]),
             ),
-            const Icon(Icons.chevron_right, color: Colors.grey),
+            Icon(Icons.chevron_right, color: AppTheme.textSubOn(context)),
           ]),
         ),
       ),

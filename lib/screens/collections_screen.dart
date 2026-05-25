@@ -464,7 +464,7 @@ class _SaveToCollectionSheetState extends State<_SaveToCollectionSheet> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              decoration: BoxDecoration(color: AppTheme.borderOn(context), borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
           Row(children: [
             const Icon(Icons.collections_bookmark, color: AppTheme.primary),
